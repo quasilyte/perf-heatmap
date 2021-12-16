@@ -149,18 +149,127 @@ func TestAddProfile(t *testing.T) {
 				"buffer.go:5: V= 10 L=0 G=0",
 			},
 		},
+
+		{
+			samples: []sampleSet{
+				funcNameSample("a.go/f1"),
+				newSampleSet(100, []int{1, 2, 3}),
+				newSampleSet(50, []int{2, 3}),
+				newSampleSet(25, []int{3}),
+				funcNameSample("a.go/f2"),
+				newSampleSet(150, []int{6}),
+				newSampleSet(160, []int{6}),
+				newSampleSet(80, []int{10}),
+				newSampleSet(40, []int{11}),
+				funcNameSample("b.go/f"),
+				newSampleSet(40, []int{5, 6}),
+				newSampleSet(40, []int{5, 6}),
+				newSampleSet(40, []int{5, 6}),
+				newSampleSet(40, []int{5, 6}),
+				newSampleSet(40, []int{5, 6}),
+			},
+			config: IndexConfig{Threshold: 1},
+			want: []string{
+				// FIXME: no G=5 due to the suboptimal forChunks.
+				// We get {0, 2, 2, 2, 2} groups.
+
+				"a.go:1: V=100 L=3 G=2",
+				"a.go:2: V=150 L=4 G=2",
+				"a.go:3: V=175 L=5 G=3",
+				"a.go:6: V=310 L=5 G=4",
+				"a.go:10: V= 80 L=2 G=1",
+				"a.go:11: V= 40 L=1 G=1",
+
+				"b.go:5: V=200 L=4 G=3",
+				"b.go:6: V=200 L=5 G=4",
+			},
+		},
+
+		{
+			samples: []sampleSet{
+				funcNameSample("a.go/f1"),
+				newSampleSet(100, []int{1, 2, 3}),
+				newSampleSet(50, []int{2, 3}),
+				newSampleSet(25, []int{3}),
+				newSampleSet(500, []int{4}),
+				funcNameSample("a.go/f2"),
+				newSampleSet(150, []int{6}),
+				newSampleSet(160, []int{6}),
+				newSampleSet(80, []int{10}),
+				newSampleSet(40, []int{11}),
+				funcNameSample("b.go/f"),
+				newSampleSet(40, []int{5, 6}),
+				newSampleSet(40, []int{5, 6}),
+				newSampleSet(40, []int{5, 6}),
+				newSampleSet(40, []int{5, 6}),
+				newSampleSet(40, []int{5, 6}),
+			},
+			config: IndexConfig{Threshold: 1},
+			want: []string{
+				"a.go:1: V=100 L=3 G=2",
+				"a.go:2: V=150 L=4 G=2",
+				"a.go:3: V=175 L=5 G=3",
+				"a.go:4: V=500 L=5 G=5",
+				"a.go:6: V=310 L=5 G=4",
+				"a.go:10: V= 80 L=2 G=1",
+				"a.go:11: V= 40 L=1 G=1",
+
+				"b.go:5: V=200 L=4 G=3",
+				"b.go:6: V=200 L=5 G=4",
+			},
+		},
+
+		{
+			samples: []sampleSet{
+				funcNameSample("a.go/f1"),
+				newSampleSet(100, []int{1, 2, 3}),
+				newSampleSet(50, []int{2, 3}),
+				newSampleSet(25, []int{3}),
+				newSampleSet(500, []int{4}),
+				funcNameSample("a.go/f2"),
+				newSampleSet(150, []int{6}),
+				newSampleSet(200, []int{6}),
+				newSampleSet(80, []int{10}),
+				newSampleSet(40, []int{11}),
+				funcNameSample("b.go/f"),
+				newSampleSet(40, []int{5, 6}),
+				newSampleSet(40, []int{5, 6}),
+				newSampleSet(40, []int{5, 6}),
+				newSampleSet(40, []int{5, 6}),
+				newSampleSet(40, []int{7}),
+				newSampleSet(145, []int{7, 6, 5}),
+				newSampleSet(40, []int{5, 6}),
+			},
+			config: IndexConfig{Threshold: 0.5},
+			want: []string{
+				"a.go:1: V=100 L=0 G=0",
+				"a.go:2: V=150 L=0 G=0",
+				"a.go:3: V=175 L=3 G=0",
+				"a.go:4: V=500 L=5 G=5",
+				"a.go:6: V=350 L=4 G=4",
+				"a.go:10: V= 80 L=0 G=0",
+				"a.go:11: V= 40 L=0 G=0",
+
+				"b.go:5: V=345 L=0 G=2",
+				"b.go:6: V=345 L=5 G=3",
+				"b.go:7: V=185 L=0 G=1",
+			},
+		},
 	}
 
-	for _, test := range tests {
-		p := createProfile(test.samples)
-		index := NewIndex(test.config)
-		if err := index.AddProfile(p); err != nil {
-			t.Fatal(err)
-		}
-		have := dumpIndex(index)
-		want := test.want
-		if diff := cmp.Diff(have, want); diff != "" {
-			t.Errorf("results mismatch:\n(+want -have)\n%s", diff)
-		}
+	for i := range tests {
+		test := tests[i]
+		t.Run(fmt.Sprintf("test%d", i), func(t *testing.T) {
+			p := createProfile(test.samples)
+			index := NewIndex(test.config)
+			if err := index.AddProfile(p); err != nil {
+				t.Fatal(err)
+			}
+			have := dumpIndex(index)
+			want := test.want
+			if diff := cmp.Diff(have, want); diff != "" {
+				t.Errorf("results mismatch:\n(+want -have)\n%s", diff)
+			}
+		})
 	}
 }

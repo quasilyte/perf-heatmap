@@ -59,7 +59,7 @@ func TestDataPointFlagsLevel(t *testing.T) {
 	}
 }
 
-func TestDataChunks(t *testing.T) {
+func TestForChunks(t *testing.T) {
 	tests := []struct {
 		points []dataPoint
 		n      int
@@ -139,12 +139,18 @@ func TestDataChunks(t *testing.T) {
 			5,
 			[]int{1, 3, 3, 3, 3},
 		},
+
+		{
+			make([]dataPoint, 8),
+			5,
+			[]int{2, 2, 2, 2},
+		},
 	}
 
 	for _, test := range tests {
 		have := []int{}
 		currentChunk := -1
-		walkDataChunks(test.points, test.n, func(chunkNum, i int) {
+		forChunks(len(test.points), test.n, func(chunkNum, i int) {
 			if chunkNum != currentChunk {
 				have = append(have, 0)
 				currentChunk = chunkNum

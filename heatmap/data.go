@@ -64,15 +64,14 @@ func (flags *dataPointFlags) SetGlobalLevel(level int) {
 	*(*uint32)(flags) |= uint32(level) << (32 - 6)
 }
 
-func walkDataChunks(points []dataPoint, n int, visit func(chunkNum, i int)) {
-	if len(points) < n {
-		n = len(points)
+func forChunks(length, n int, visit func(chunkNum, i int)) {
+	if length < n {
+		n = length
 	}
-	avgLen := int(math.Round(float64(len(points)) / float64(n)))
-	delta := len(points) - (avgLen * n)
+	avgLen := int(math.Round(float64(length) / float64(n)))
+	delta := length - (avgLen * n)
 	rem := delta
 
-	toProcess := points
 	i := 0
 	for chunkNum := 0; chunkNum < n; chunkNum++ {
 		// First chunk will include the remainder (which can be negative).
@@ -84,6 +83,5 @@ func walkDataChunks(points []dataPoint, n int, visit func(chunkNum, i int)) {
 			visit(chunkNum, i)
 			i++
 		}
-		toProcess = toProcess[numElems:]
 	}
 }

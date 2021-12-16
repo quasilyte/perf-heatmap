@@ -121,13 +121,9 @@ func (w *profileWalker) Walk() error {
 		if topn == 0 {
 			topn = 1
 		}
-		points := make([]dataPoint, topn)
-		for i := range points {
-			points[i] = allPoints[valueOrder[i]]
-		}
 		currentLevel := 5
 		currentChunk := 0
-		walkDataChunks(points, maxHeatLevel, func(chunkNum, i int) {
+		forChunks(topn, maxHeatLevel, func(chunkNum, i int) {
 			pt := &allPoints[valueOrder[i]]
 			if currentChunk != chunkNum {
 				currentLevel--
@@ -151,7 +147,7 @@ func (w *profileWalker) Walk() error {
 		points := data[:topn]
 		currentLevel := 5
 		currentChunk := 0
-		walkDataChunks(points, maxHeatLevel, func(chunkNum, i int) {
+		forChunks(len(points), maxHeatLevel, func(chunkNum, i int) {
 			pt := &points[i]
 			if currentChunk != chunkNum {
 				currentLevel--

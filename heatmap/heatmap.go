@@ -47,6 +47,20 @@ type IndexConfig struct {
 	Threshold float64
 }
 
+// FuncInfo contains some aggregated function info.
+type FuncInfo struct {
+	Name string
+
+	MaxHeatLevel int
+
+	MaxGlobalHeatLevel int
+}
+
+type HeatLevel struct {
+	Local  int
+	Global int
+}
+
 // NewIndex creates an empty heatmap index.
 // Use AddProfile method to populate it.
 func NewIndex(config IndexConfig) *Index {
@@ -104,17 +118,20 @@ type LineStats struct {
 	Func *FuncInfo
 }
 
-// FuncInfo contains some aggregated function info.
-type FuncInfo struct {
-	Name string
-
-	MaxHeatLevel int
-
-	MaxGlobalHeatLevel int
+// HasFile reports whether index contains the file.
+func (index *Index) HasFile(filename string) bool {
+	_, ok := index.byFilename[filename]
+	return ok
 }
 
+// InspectFileLines visits all file data points using the provided callback.
+// To check whether index has a file, use HasFile().
+// To get all files contained inside the index, use CollectFilenames().
 func (index *Index) InspectFileLines(filename string, visit func(LineStats)) {
 	f := index.byFilename[filename]
+	if f == nil {
+		return
+	}
 	data := index.dataPoints[f.dataFrom:f.dataTo]
 	var funcInfo FuncInfo
 	for _, pt := range data {
@@ -130,11 +147,6 @@ func (index *Index) InspectFileLines(filename string, visit func(LineStats)) {
 			Func:            &funcInfo,
 		})
 	}
-}
-
-type HeatLevel struct {
-	Local  int
-	Global int
 }
 
 func (index *Index) QueryFunc(filename, funcName string) HeatLevel {

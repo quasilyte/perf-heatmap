@@ -443,6 +443,10 @@ func TestAddProfile(t *testing.T) {
 
 	validateIndex := func(t *testing.T, index *Index) {
 		for filename, f := range index.byFilename {
+			if !index.HasFile(filename) {
+				t.Fatalf("!HasFile(%s)", filename)
+
+			}
 			funcnames := make([]string, 0, len(f.funcs))
 			for _, fn := range f.funcs {
 				funcnames = append(funcnames, fn.name)

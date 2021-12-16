@@ -3,6 +3,7 @@ package heatmap
 import (
 	"fmt"
 	"path"
+	"sort"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -382,6 +383,23 @@ func TestAddProfile(t *testing.T) {
 		},
 	}
 
+	validateIndex := func(t *testing.T, index *Index) {
+		for filename, f := range index.byFilename {
+			funcnames := make([]string, len(f.funcs))
+			for _, fn := range f.funcs {
+				funcnames = append(funcnames, fn.name)
+				haveValues := index.QueryFunc(filename, fn.name)
+				wantValues := HeatLevel{Local: int(fn.maxLocalLevel), Global: int(fn.maxGlobalLevel)}
+				if haveValues != wantValues {
+					t.Fatalf("QueryFunc(%s, %s): invalid heat values", filename, fn.name)
+				}
+			}
+			if !sort.IsSorted(sort.StringSlice(funcnames)) {
+				t.Fatalf("%s funcs are not sorted correctly", filename)
+			}
+		}
+	}
+
 	run := func(t *testing.T, name string, test testCase) {
 		t.Helper()
 		t.Run(name, func(t *testing.T) {
@@ -390,6 +408,7 @@ func TestAddProfile(t *testing.T) {
 			if err := index.AddProfile(p); err != nil {
 				t.Fatal(err)
 			}
+			validateIndex(t, index)
 			have := dumpIndex(index)
 			want := test.want
 			if diff := cmp.Diff(have, want); diff != "" {

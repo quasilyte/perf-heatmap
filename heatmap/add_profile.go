@@ -182,6 +182,14 @@ func (w *profileWalker) Walk() error {
 		for _, fn := range fileFuncByName {
 			f.funcs = append(f.funcs, *fn)
 		}
+		// f.funcs are in kinda-random order due to the map range order.
+		// But we want to sort them by name anyway, so don't bother about
+		// fn.id order; we'll fix that using the idOrder table below.
+		sort.Slice(f.funcs, func(i, j int) bool {
+			return f.funcs[i].name < f.funcs[j].name
+		})
+		// idOrder maps func.id to funcs[i] index.
+		// So we can update the old IDs without any extra sort ops.
 		idOrder := make([]uint16, len(f.funcs))
 		for i := range f.funcs {
 			idOrder[f.funcs[i].id] = uint16(i)

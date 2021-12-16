@@ -66,10 +66,15 @@ func cmdStat(args []string) error {
 		if !filenameRE.MatchString(filename) {
 			continue
 		}
-		i := 0
 		fmt.Printf("%s:\n", filename)
-		index.InspectFile(filename, func(s heatmap.LineStats) {
-			fmt.Printf("[%3d] line %4d: %6.2fs L=%d G=%d\n", i, s.LineNum, time.Duration(s.Value).Seconds(), s.HeatLevel, s.GlobalHeatLevel)
+		i := 0
+		currentFunc := ""
+		index.InspectFileLines(filename, func(s heatmap.LineStats) {
+			if currentFunc != s.FuncName {
+				currentFunc = s.FuncName
+				fmt.Printf("  func %s:\n", currentFunc)
+			}
+			fmt.Printf("    [%3d] line %4d: %6.2fs L=%d G=%d\n", i, s.LineNum, time.Duration(s.Value).Seconds(), s.HeatLevel, s.GlobalHeatLevel)
 			i++
 		})
 	}
@@ -122,7 +127,7 @@ func cmdJson(args []string) error {
 	for _, filename := range allFilenames {
 		f := &jsonFileIndex{Name: filename}
 		result.Files = append(result.Files, f)
-		index.InspectFile(filename, func(stats heatmap.LineStats) {
+		index.InspectFileLines(filename, func(stats heatmap.LineStats) {
 			if stats.HeatLevel == 0 {
 				return
 			}

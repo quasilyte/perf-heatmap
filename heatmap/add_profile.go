@@ -41,7 +41,8 @@ func (w *profileWalker) Walk() error {
 	// Pass 1: aggregate the samples, build intermediate mappings.
 	numDataPoints := uint64(0)
 	m := map[string]*fileIndex{}
-	fileValuesByName := map[string]map[int64]*dataPoint{}
+	fileValues := map[*fileIndex]map[int64]*dataPoint{}
+	fileFuncs := map[*fileIndex]map[string]*funcDataPoint{}
 	for _, s := range w.p.Sample {
 		sampleValue := s.Value[1]
 		for _, loc := range s.Location {
@@ -55,10 +56,24 @@ func (w *profileWalker) Walk() error {
 					}
 					m[filename] = f
 				}
-				fileValueByLine := fileValuesByName[filename]
+				fileFuncByName := fileFuncs[f]
+				if fileFuncByName == nil {
+					fileFuncByName = map[string]*funcDataPoint{}
+					fileFuncs[f] = fileFuncByName
+				}
+				fn := fileFuncByName[l.Function.Name]
+				if fn == nil {
+					fn = &funcDataPoint{
+						id:   uint16(len(fileFuncByName)),
+						name: l.Function.Name,
+						line: uint32(l.Function.StartLine),
+					}
+					fileFuncByName[l.Function.Name] = fn
+				}
+				fileValueByLine := fileValues[f]
 				if fileValueByLine == nil {
 					fileValueByLine = map[int64]*dataPoint{}
-					fileValuesByName[filename] = fileValueByLine
+					fileValues[f] = fileValueByLine
 				}
 				pt := fileValueByLine[lineNum]
 				if lineNum > math.MaxUint32 {
@@ -66,7 +81,10 @@ func (w *profileWalker) Walk() error {
 				}
 				if pt == nil {
 					numDataPoints++
-					pt = &dataPoint{line: uint32(lineNum)}
+					pt = &dataPoint{
+						line:      uint32(lineNum),
+						funcIndex: fn.id,
+					}
 					fileValueByLine[lineNum] = pt
 				}
 				pt.value += sampleValue
@@ -83,8 +101,7 @@ func (w *profileWalker) Walk() error {
 
 	// Pass 2: put all aggregated points into one slice, bind data ranges to files.
 	allPoints := make([]dataPoint, 0, numDataPoints)
-	for filename, fileValueByLine := range fileValuesByName {
-		f := m[filename]
+	for f, fileValueByLine := range fileValues {
 		f.dataFrom = len(allPoints)
 		for _, pt := range fileValueByLine {
 			allPoints = append(allPoints, *pt)
@@ -95,6 +112,15 @@ func (w *profileWalker) Walk() error {
 			}
 		}
 		f.dataTo = len(allPoints)
+	}
+	for f, fileFuncByName := range fileFuncs {
+		f.funcs = make([]funcDataPoint, 0, len(fileFuncByName))
+		for _, fn := range fileFuncByName {
+			f.funcs = append(f.funcs, *fn)
+		}
+		sort.Slice(f.funcs, func(i, j int) bool {
+			return f.funcs[i].id < f.funcs[j].id
+		})
 	}
 
 	// Pass 3: compute the global heat levels.

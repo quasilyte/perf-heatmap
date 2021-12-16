@@ -8,6 +8,19 @@ type fileIndex struct {
 
 	dataFrom int
 	dataTo   int
+
+	funcs []funcDataPoint
+}
+
+type funcDataPoint struct {
+	id uint16
+
+	maxLocalLevel  uint8
+	maxGlobalLevel uint8
+
+	line uint32
+
+	name string
 }
 
 func (f *fileIndex) NumPoints() int {
@@ -20,42 +33,48 @@ func (f *fileIndex) NumPoints() int {
 // as uint32 instead of int64. Having a line number that doesn't
 // fit that is unlikely (4_294_967_295 lines), but even in that
 // case we'll just skip samples that go beyond that.
-// The saved 32 bits go into the extra metadata. See dataPointFlags.
+//
+// The saved 32 bits go into the extra metadata.
+// 16 bits are used to reference the associated function.
+// fileIndex.funcs[dataPoint.funcIndex] correspond to a function info.
+// If file contains more than 65535 functions with samples, oh well.
+// Other 16 bits are occupied by dataPointFlags.
 type dataPoint struct {
-	line  uint32
-	flags dataPointFlags
-	value int64
+	line      uint32
+	funcIndex uint16
+	flags     dataPointFlags
+	value     int64
 }
 
 // Upper 3 bits are for the local level value.
 // Next 3 bits are for the global level value.
-// Other lower bits are bit flags.
-type dataPointFlags uint32
+// Other (10) lower bits are bit flags.
+type dataPointFlags uint16
 
 func (flags *dataPointFlags) GetLocalLevel() int {
-	const mask = (0b111 << (32 - 3))
-	return int(*flags&mask) >> (32 - 3)
+	const mask = (0b111 << (16 - 3))
+	return int(*flags&mask) >> (16 - 3)
 }
 
 func (flags *dataPointFlags) GetGlobalLevel() int {
-	const mask = (0b111 << (32 - 6))
-	return int(*flags&mask) >> (32 - 6)
+	const mask = (0b111 << (16 - 6))
+	return int(*flags&mask) >> (16 - 6)
 }
 
 func (flags *dataPointFlags) SetLocalLevel(level int) {
 	if level < 0 || level > maxHeatLevel {
 		panic("invalid level value") // Should never happen.
 	}
-	const mask = (0b111 << (32 - 3))
-	*(*uint32)(flags) &^= mask
-	*(*uint32)(flags) |= uint32(level) << (32 - 3)
+	const mask = (0b111 << (16 - 3))
+	*(*uint16)(flags) &^= mask
+	*(*uint16)(flags) |= uint16(level) << (16 - 3)
 }
 
 func (flags *dataPointFlags) SetGlobalLevel(level int) {
 	if level < 0 || level > maxHeatLevel {
 		panic("invalid level value") // Should never happen.
 	}
-	const mask = (0b111 << (32 - 6))
-	*(*uint32)(flags) &^= mask
-	*(*uint32)(flags) |= uint32(level) << (32 - 6)
+	const mask = (0b111 << (16 - 6))
+	*(*uint16)(flags) &^= mask
+	*(*uint16)(flags) |= uint16(level) << (16 - 6)
 }

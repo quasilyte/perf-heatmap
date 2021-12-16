@@ -6,7 +6,7 @@ import (
 	"github.com/google/pprof/profile"
 )
 
-// Index...
+// Index represents a parsed profile that can run heatmap queries efficiently.
 //
 // Index is not thread-safe.
 // Adding profiles / querying index requires synchronization.
@@ -99,9 +99,11 @@ type LineStats struct {
 	// but these lines may be irrelevant in the global picture.
 	// GlobalHeatLevel is based on the aggregated top among all files.
 	GlobalHeatLevel int
+
+	FuncName string
 }
 
-func (index *Index) InspectFile(filename string, visit func(LineStats)) {
+func (index *Index) InspectFileLines(filename string, visit func(LineStats)) {
 	f := index.byFilename[filename]
 	data := index.dataPoints[f.dataFrom:f.dataTo]
 	for _, pt := range data {
@@ -110,6 +112,7 @@ func (index *Index) InspectFile(filename string, visit func(LineStats)) {
 			Value:           pt.value,
 			HeatLevel:       pt.flags.GetLocalLevel(),
 			GlobalHeatLevel: pt.flags.GetGlobalLevel(),
+			FuncName:        f.funcs[pt.funcIndex].name,
 		})
 	}
 }

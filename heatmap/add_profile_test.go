@@ -100,11 +100,18 @@ func TestAddProfile(t *testing.T) {
 		return lines
 	}
 
+	type testQuery struct {
+		filename string
+		line     int
+		want     HeatLevel
+	}
+
 	type testCase struct {
 		samples   []sampleSet
 		config    IndexConfig
 		want      []string
 		noReverse bool
+		queries   []testQuery
 	}
 
 	tests := []testCase{
@@ -118,6 +125,45 @@ func TestAddProfile(t *testing.T) {
 			want: []string{
 				"func example (L=5 G=5)",
 				"buffer.go:10: V=100 L=5 G=5",
+			},
+		},
+
+		{
+			samples: joinSamples(
+				newFuncSampleSet("/home/gopher/buffer.go/example",
+					newSampleSet(75, []int{10})),
+			),
+			config: IndexConfig{
+				TrimPrefix: "/home/gopher/",
+				Threshold:  0.25,
+			},
+			want: []string{
+				"func example (L=5 G=5)",
+				"buffer.go:10: V= 75 L=5 G=5",
+			},
+			queries: []testQuery{
+				{"buffer.go", 10, HeatLevel{5, 5}},
+				{"/home/gopher/buffer.go", 10, HeatLevel{}},
+				{"/home/gopher/buffer.go", 9, HeatLevel{}},
+				{"/home/gopher/buffer2.go", 10, HeatLevel{}},
+			},
+		},
+
+		{
+			samples: joinSamples(
+				newFuncSampleSet("/home/gopher/buffer.go/example",
+					newSampleSet(75, []int{10})),
+			),
+			config: IndexConfig{Threshold: 0.25},
+			want: []string{
+				"func example (L=5 G=5)",
+				"/home/gopher/buffer.go:10: V= 75 L=5 G=5",
+			},
+			queries: []testQuery{
+				{"/home/gopher/buffer.go", 10, HeatLevel{5, 5}},
+				{"buffer.go", 10, HeatLevel{}},
+				{"/home/gopher/buffer.go", 9, HeatLevel{}},
+				{"/home/gopher/buffer2.go", 10, HeatLevel{}},
 			},
 		},
 
@@ -519,6 +565,13 @@ func TestAddProfile(t *testing.T) {
 			want := test.want
 			if diff := cmp.Diff(have, want); diff != "" {
 				t.Errorf("results mismatch:\n(+want -have)\n%s", diff)
+			}
+			for _, q := range test.queries {
+				have := index.QueryLine(q.filename, q.line)
+				want := q.want
+				if diff := cmp.Diff(have, want); diff != "" {
+					t.Errorf("QueryLine(%q, %d) results:\n(+want -have)\n%s", q.filename, q.line, diff)
+				}
 			}
 		})
 	}

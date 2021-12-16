@@ -25,6 +25,10 @@ type Index struct {
 }
 
 type IndexConfig struct {
+	// TrimPrefix is a filename prefix to be trimmed from all locations.
+	// If used, all filename arguments to the index need to trim this prefix too.
+	TrimPrefix string
+
 	// Threshold specifies where is the line between the "cold" and "hot" code.
 	// Zero value implies 0.5, not 0.
 	//

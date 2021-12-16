@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/google/pprof/profile"
 )
@@ -47,7 +48,7 @@ func (w *profileWalker) Walk() error {
 		sampleValue := s.Value[1]
 		for _, loc := range s.Location {
 			for _, l := range loc.Line {
-				filename := l.Function.Filename
+				filename := strings.TrimPrefix(l.Function.Filename, w.index.config.TrimPrefix)
 				lineNum := l.Line
 				f := m[filename]
 				if f == nil {

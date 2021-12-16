@@ -100,19 +100,37 @@ type LineStats struct {
 	// GlobalHeatLevel is based on the aggregated top among all files.
 	GlobalHeatLevel int
 
-	FuncName string
+	// Func is a containing function info.
+	Func *FuncInfo
+}
+
+// FuncInfo contains some aggregated function info.
+type FuncInfo struct {
+	Name string
+
+	Line int
+
+	MaxHeatLevel int
+
+	MaxGlobalHeatLevel int
 }
 
 func (index *Index) InspectFileLines(filename string, visit func(LineStats)) {
 	f := index.byFilename[filename]
 	data := index.dataPoints[f.dataFrom:f.dataTo]
+	var funcInfo FuncInfo
 	for _, pt := range data {
+		fn := &f.funcs[pt.funcIndex]
+		funcInfo.Name = fn.name
+		funcInfo.Line = int(fn.line)
+		funcInfo.MaxHeatLevel = int(fn.maxLocalLevel)
+		funcInfo.MaxGlobalHeatLevel = int(fn.maxGlobalLevel)
 		visit(LineStats{
 			LineNum:         int(pt.line),
 			Value:           pt.value,
 			HeatLevel:       pt.flags.GetLocalLevel(),
 			GlobalHeatLevel: pt.flags.GetGlobalLevel(),
-			FuncName:        f.funcs[pt.funcIndex].name,
+			Func:            &funcInfo,
 		})
 	}
 }

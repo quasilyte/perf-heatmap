@@ -80,9 +80,10 @@ func TestAddProfile(t *testing.T) {
 		for _, filename := range index.CollectFilenames() {
 			currentFunc := ""
 			index.InspectFileLines(filename, func(s LineStats) {
-				if currentFunc != s.FuncName {
-					currentFunc = s.FuncName
-					lines = append(lines, fmt.Sprintf("func %s", currentFunc))
+				if currentFunc != s.Func.Name {
+					currentFunc = s.Func.Name
+					lines = append(lines, fmt.Sprintf("func %s (L=%d G=%d)",
+						currentFunc, s.Func.MaxHeatLevel, s.Func.MaxGlobalHeatLevel))
 				}
 				l := fmt.Sprintf("%s:%d: V=%3d L=%d G=%d", filename, s.LineNum, s.Value, s.HeatLevel, s.GlobalHeatLevel)
 				lines = append(lines, l)
@@ -104,7 +105,7 @@ func TestAddProfile(t *testing.T) {
 			},
 			config: IndexConfig{Threshold: 0.25},
 			want: []string{
-				"func example",
+				"func example (L=5 G=5)",
 				"buffer.go:10: V=100 L=5 G=5",
 			},
 		},
@@ -116,7 +117,7 @@ func TestAddProfile(t *testing.T) {
 			},
 			config: IndexConfig{Threshold: 0.25},
 			want: []string{
-				"func example",
+				"func example (L=5 G=5)",
 				"buffer.go:10: V= 25 L=0 G=0",
 				"buffer.go:11: V= 75 L=0 G=0",
 				"buffer.go:12: V= 75 L=5 G=5",
@@ -133,7 +134,7 @@ func TestAddProfile(t *testing.T) {
 			},
 			config: IndexConfig{Threshold: 1},
 			want: []string{
-				"func example",
+				"func example (L=5 G=5)",
 				"buffer.go:1: V= 14 L=5 G=5",
 				"buffer.go:2: V= 13 L=4 G=4",
 				"buffer.go:3: V= 12 L=3 G=3",
@@ -152,7 +153,7 @@ func TestAddProfile(t *testing.T) {
 			},
 			config: IndexConfig{Threshold: 0.6},
 			want: []string{
-				"func example",
+				"func example (L=5 G=5)",
 				"buffer.go:1: V= 14 L=5 G=5",
 				"buffer.go:2: V= 13 L=4 G=4",
 				"buffer.go:3: V= 12 L=3 G=3",
@@ -181,17 +182,17 @@ func TestAddProfile(t *testing.T) {
 			},
 			config: IndexConfig{Threshold: 1},
 			want: []string{
-				"func f1",
+				"func f1 (L=4 G=3)",
 				"a.go:1: V=100 L=2 G=2",
 				"a.go:2: V=150 L=3 G=2",
 				"a.go:3: V=175 L=4 G=3",
 
-				"func f2",
+				"func f2 (L=5 G=5)",
 				"a.go:6: V=310 L=5 G=5",
 				"a.go:10: V= 80 L=1 G=1",
 				"a.go:11: V= 40 L=1 G=1",
 
-				"func f",
+				"func f (L=5 G=4)",
 				"b.go:5: V=200 L=4 G=4",
 				"b.go:6: V=200 L=5 G=4",
 			},
@@ -218,18 +219,18 @@ func TestAddProfile(t *testing.T) {
 			},
 			config: IndexConfig{Threshold: 1},
 			want: []string{
-				"func f1",
+				"func f1 (L=5 G=5)",
 				"a.go:1: V=100 L=2 G=2",
 				"a.go:2: V=150 L=3 G=2",
 				"a.go:3: V=175 L=3 G=3",
 				"a.go:4: V=500 L=5 G=5",
 
-				"func f2",
+				"func f2 (L=4 G=4)",
 				"a.go:6: V=310 L=4 G=4",
 				"a.go:10: V= 80 L=1 G=1",
 				"a.go:11: V= 40 L=1 G=1",
 
-				"func f",
+				"func f (L=5 G=4)",
 				"b.go:5: V=200 L=4 G=3",
 				"b.go:6: V=200 L=5 G=4",
 			},
@@ -258,18 +259,18 @@ func TestAddProfile(t *testing.T) {
 			},
 			config: IndexConfig{Threshold: 0.5},
 			want: []string{
-				"func f1",
+				"func f1 (L=5 G=5)",
 				"a.go:1: V=100 L=0 G=0",
 				"a.go:2: V=150 L=0 G=0",
 				"a.go:3: V=175 L=3 G=0",
 				"a.go:4: V=500 L=5 G=5",
 
-				"func f2",
+				"func f2 (L=4 G=4)",
 				"a.go:6: V=350 L=4 G=4",
 				"a.go:10: V= 80 L=0 G=0",
 				"a.go:11: V= 40 L=0 G=0",
 
-				"func f",
+				"func f (L=5 G=3)",
 				"b.go:5: V=345 L=0 G=2",
 				"b.go:6: V=345 L=5 G=3",
 				"b.go:7: V=185 L=0 G=1",

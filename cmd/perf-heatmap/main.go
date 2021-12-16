@@ -70,8 +70,8 @@ func cmdStat(args []string) error {
 		i := 0
 		currentFunc := ""
 		index.InspectFileLines(filename, func(s heatmap.LineStats) {
-			if currentFunc != s.FuncName {
-				currentFunc = s.FuncName
+			if currentFunc != s.Func.Name {
+				currentFunc = s.Func.Name
 				fmt.Printf("  func %s:\n", currentFunc)
 			}
 			fmt.Printf("    [%3d] line %4d: %6.2fs L=%d G=%d\n", i, s.LineNum, time.Duration(s.Value).Seconds(), s.HeatLevel, s.GlobalHeatLevel)

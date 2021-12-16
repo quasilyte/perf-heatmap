@@ -187,6 +187,19 @@ func (w *profileWalker) Walk() error {
 		})
 	}
 
+	for _, f := range m {
+		data := allPoints[f.dataFrom:f.dataTo]
+		for _, pt := range data {
+			fn := &f.funcs[pt.funcIndex]
+			if pt.flags.GetLocalLevel() > int(fn.maxLocalLevel) {
+				fn.maxLocalLevel = uint8(pt.flags.GetLocalLevel())
+			}
+			if pt.flags.GetGlobalLevel() > int(fn.maxGlobalLevel) {
+				fn.maxGlobalLevel = uint8(pt.flags.GetGlobalLevel())
+			}
+		}
+	}
+
 	w.index.byFilename = m
 	w.index.dataPoints = allPoints
 

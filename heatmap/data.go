@@ -1,5 +1,7 @@
 package heatmap
 
+import "fmt"
+
 const maxHeatLevel = 5
 
 type fileIndex struct {
@@ -9,7 +11,12 @@ type fileIndex struct {
 	dataFrom int
 	dataTo   int
 
+	// Sorted by name.
 	funcs []funcDataPoint
+}
+
+func (f *fileIndex) NumPoints() int {
+	return f.dataTo - f.dataFrom
 }
 
 type funcDataPoint struct {
@@ -18,13 +25,11 @@ type funcDataPoint struct {
 	maxLocalLevel  uint8
 	maxGlobalLevel uint8
 
-	line uint32
-
 	name string
 }
 
-func (f *fileIndex) NumPoints() int {
-	return f.dataTo - f.dataFrom
+func (pt funcDataPoint) String() string {
+	return fmt.Sprintf("{%d, %s}", pt.id, pt.name)
 }
 
 // dataPoint is a compact index data unit.

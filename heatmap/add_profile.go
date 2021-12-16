@@ -66,7 +66,6 @@ func (w *profileWalker) Walk() error {
 					fn = &funcDataPoint{
 						id:   uint16(len(fileFuncByName)),
 						name: l.Function.Name,
-						line: uint32(l.Function.StartLine),
 					}
 					fileFuncByName[l.Function.Name] = fn
 				}
@@ -112,15 +111,6 @@ func (w *profileWalker) Walk() error {
 			}
 		}
 		f.dataTo = len(allPoints)
-	}
-	for f, fileFuncByName := range fileFuncs {
-		f.funcs = make([]funcDataPoint, 0, len(fileFuncByName))
-		for _, fn := range fileFuncByName {
-			f.funcs = append(f.funcs, *fn)
-		}
-		sort.Slice(f.funcs, func(i, j int) bool {
-			return f.funcs[i].id < f.funcs[j].id
-		})
 	}
 
 	// Pass 3: compute the global heat levels.
@@ -187,10 +177,21 @@ func (w *profileWalker) Walk() error {
 		})
 	}
 
-	for _, f := range m {
+	for f, fileFuncByName := range fileFuncs {
+		f.funcs = make([]funcDataPoint, 0, len(fileFuncByName))
+		for _, fn := range fileFuncByName {
+			f.funcs = append(f.funcs, *fn)
+		}
+		idOrder := make([]uint16, len(f.funcs))
+		for i := range f.funcs {
+			idOrder[f.funcs[i].id] = uint16(i)
+		}
 		data := allPoints[f.dataFrom:f.dataTo]
-		for _, pt := range data {
-			fn := &f.funcs[pt.funcIndex]
+		for i := range data {
+			pt := &data[i]
+			newFuncID := idOrder[pt.funcIndex]
+			fn := &f.funcs[newFuncID]
+			pt.funcIndex = newFuncID
 			if pt.flags.GetLocalLevel() > int(fn.maxLocalLevel) {
 				fn.maxLocalLevel = uint8(pt.flags.GetLocalLevel())
 			}

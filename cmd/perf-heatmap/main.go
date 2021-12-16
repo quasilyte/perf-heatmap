@@ -126,11 +126,12 @@ func cmdJson(args []string) error {
 
 	for _, filename := range allFilenames {
 		f := &jsonFileIndex{Name: filename}
-		result.Files = append(result.Files, f)
+
 		index.InspectFileLines(filename, func(stats heatmap.LineStats) {
 			if stats.HeatLevel == 0 {
 				return
 			}
+
 			value := int(stats.Value)
 			if valueMultiplier != 1.0 {
 				value = int(float64(value) * valueMultiplier)
@@ -145,6 +146,8 @@ func cmdJson(args []string) error {
 				Value:           value,
 			})
 		})
+
+		result.Files = append(result.Files, f)
 	}
 
 	writeJSON(os.Stdout, result)

@@ -108,8 +108,6 @@ type LineStats struct {
 type FuncInfo struct {
 	Name string
 
-	Line int
-
 	MaxHeatLevel int
 
 	MaxGlobalHeatLevel int
@@ -122,7 +120,6 @@ func (index *Index) InspectFileLines(filename string, visit func(LineStats)) {
 	for _, pt := range data {
 		fn := &f.funcs[pt.funcIndex]
 		funcInfo.Name = fn.name
-		funcInfo.Line = int(fn.line)
 		funcInfo.MaxHeatLevel = int(fn.maxLocalLevel)
 		funcInfo.MaxGlobalHeatLevel = int(fn.maxGlobalLevel)
 		visit(LineStats{
@@ -133,4 +130,26 @@ func (index *Index) InspectFileLines(filename string, visit func(LineStats)) {
 			Func:            &funcInfo,
 		})
 	}
+}
+
+type HeatLevel struct {
+	Local  int
+	Global int
+}
+
+func (index *Index) QueryFunc(filename, funcName string) HeatLevel {
+	var result HeatLevel
+	f, ok := index.byFilename[filename]
+	if !ok {
+		return result
+	}
+	i := sort.Search(len(f.funcs), func(i int) bool {
+		return f.funcs[i].name >= funcName
+	})
+	if i < len(f.funcs) && f.funcs[i].name == funcName {
+		fn := &f.funcs[i]
+		result.Local = int(fn.maxLocalLevel)
+		result.Global = int(fn.maxGlobalLevel)
+	}
+	return result
 }

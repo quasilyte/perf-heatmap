@@ -167,7 +167,7 @@ func (index *Index) QueryLine(filename string, line int) HeatLevel {
 	}
 
 	data := index.dataPoints[f.dataFrom:f.dataTo]
-	if len(data) <= 8 {
+	if len(data) <= 4 {
 		// Short data slice, use linear search.
 		for i := range data {
 			pt := &data[i]

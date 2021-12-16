@@ -26,7 +26,7 @@ type Index struct {
 
 type IndexConfig struct {
 	// Threshold specifies where is the line between the "cold" and "hot" code.
-	// If unset (0), the default value of 0.5 will be implied.
+	// Zero value implies 0.5, not 0.
 	//
 	// The threshould value can be interpreted in this way: what percentage
 	// of top sample records we're marking as hot. For 0.5 it's top 50% results.

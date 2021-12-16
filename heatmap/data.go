@@ -1,9 +1,5 @@
 package heatmap
 
-import (
-	"math"
-)
-
 const maxHeatLevel = 5
 
 type fileIndex struct {
@@ -62,26 +58,4 @@ func (flags *dataPointFlags) SetGlobalLevel(level int) {
 	const mask = (0b111 << (32 - 6))
 	*(*uint32)(flags) &^= mask
 	*(*uint32)(flags) |= uint32(level) << (32 - 6)
-}
-
-func forChunks(length, n int, visit func(chunkNum, i int)) {
-	if length < n {
-		n = length
-	}
-	avgLen := int(math.Round(float64(length) / float64(n)))
-	delta := length - (avgLen * n)
-	rem := delta
-
-	i := 0
-	for chunkNum := 0; chunkNum < n; chunkNum++ {
-		// First chunk will include the remainder (which can be negative).
-		numElems := avgLen
-		if chunkNum == 0 {
-			numElems += rem
-		}
-		for j := 0; j < numElems; j++ {
-			visit(chunkNum, i)
-			i++
-		}
-	}
 }

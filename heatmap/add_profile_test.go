@@ -170,17 +170,14 @@ func TestAddProfile(t *testing.T) {
 			},
 			config: IndexConfig{Threshold: 1},
 			want: []string{
-				// FIXME: no G=5 due to the suboptimal forChunks.
-				// We get {0, 2, 2, 2, 2} groups.
-
-				"a.go:1: V=100 L=3 G=2",
-				"a.go:2: V=150 L=4 G=2",
-				"a.go:3: V=175 L=5 G=3",
-				"a.go:6: V=310 L=5 G=4",
-				"a.go:10: V= 80 L=2 G=1",
+				"a.go:1: V=100 L=2 G=2",
+				"a.go:2: V=150 L=3 G=2",
+				"a.go:3: V=175 L=4 G=3",
+				"a.go:6: V=310 L=5 G=5",
+				"a.go:10: V= 80 L=1 G=1",
 				"a.go:11: V= 40 L=1 G=1",
 
-				"b.go:5: V=200 L=4 G=3",
+				"b.go:5: V=200 L=4 G=4",
 				"b.go:6: V=200 L=5 G=4",
 			},
 		},
@@ -206,12 +203,12 @@ func TestAddProfile(t *testing.T) {
 			},
 			config: IndexConfig{Threshold: 1},
 			want: []string{
-				"a.go:1: V=100 L=3 G=2",
-				"a.go:2: V=150 L=4 G=2",
-				"a.go:3: V=175 L=5 G=3",
+				"a.go:1: V=100 L=2 G=2",
+				"a.go:2: V=150 L=3 G=2",
+				"a.go:3: V=175 L=3 G=3",
 				"a.go:4: V=500 L=5 G=5",
-				"a.go:6: V=310 L=5 G=4",
-				"a.go:10: V= 80 L=2 G=1",
+				"a.go:6: V=310 L=4 G=4",
+				"a.go:10: V= 80 L=1 G=1",
 				"a.go:11: V= 40 L=1 G=1",
 
 				"b.go:5: V=200 L=4 G=3",

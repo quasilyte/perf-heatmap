@@ -465,6 +465,33 @@ func TestAddProfile(t *testing.T) {
 					t.Fatalf("QueryLine(%s, %d): invalid heat values\nhave: %#v\nwant: %#v",
 						filename, pt.line, haveValues, wantValues)
 				}
+				var haveValues2 HeatLevel
+				index.queryLineRange(filename, int(pt.line), int(pt.line), func(l HeatLevel) bool {
+					haveValues2 = l
+					return true
+				})
+				if haveValues2 != wantValues {
+					t.Fatalf("QueryLineRange(%s, %d, %d): invalid heat values\nhave: %#v\nwant: %#v",
+						filename, pt.line, pt.line, haveValues2, wantValues)
+				}
+				var haveValues3 HeatLevel
+				index.queryLineRange(filename, int(pt.line), int(pt.line), func(l HeatLevel) bool {
+					haveValues3 = l
+					return true
+				})
+				if haveValues3 != wantValues {
+					t.Fatalf("queryLineRange(%s, %d, %d): invalid heat values\nhave: %#v\nwant: %#v",
+						filename, pt.line, pt.line, haveValues3, wantValues)
+				}
+				haveTotal := 0
+				index.queryLineRange(filename, 1, int(f.maxLine), func(l HeatLevel) bool {
+					haveTotal++
+					return true
+				})
+				if haveTotal != f.NumPoints() {
+					t.Fatalf("queryLineRange(%s, 1, %d): results number mismatch\nhave: %v\nwant: %v",
+						filename, int(f.maxLine), haveTotal, f.NumPoints())
+				}
 			}
 			if f.minLine > f.maxLine {
 				t.Fatalf("%s minLine > maxLine", filename)

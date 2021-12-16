@@ -154,6 +154,17 @@ func (index *Index) QueryFunc(filename, funcName string) HeatLevel {
 	return result
 }
 
+// QueryLineRange scans the file data points that are located in [lineFrom, lineTo] range.
+// fn is called for every matching data point.
+// Returning false from the callback causes the iteration to stop early.
+func (index *Index) QueryLineRange(filename string, lineFrom, lineTo int, fn func(HeatLevel) bool) {
+	if lineFrom == lineTo {
+		fn(index.QueryLine(filename, lineFrom))
+		return
+	}
+	index.queryLineRange(filename, lineFrom, lineTo, fn)
+}
+
 func (index *Index) QueryLine(filename string, line int) HeatLevel {
 	var result HeatLevel
 	f, ok := index.byFilename[filename]
@@ -161,33 +172,75 @@ func (index *Index) QueryLine(filename string, line int) HeatLevel {
 		return result
 	}
 
-	// Quick range check to avoid the search.
+	// A quick range check to avoid the search.
 	if line < int(f.minLine) || line > int(f.maxLine) {
 		return result
 	}
 
 	data := index.dataPoints[f.dataFrom:f.dataTo]
 	if len(data) <= 4 {
-		// Short data slice, use linear search.
+		// Short data slice, use a linear search.
 		for i := range data {
 			pt := &data[i]
 			if pt.line == uint32(line) {
-				result.Local = int(pt.flags.GetLocalLevel())
-				result.Global = int(pt.flags.GetGlobalLevel())
+				result = pt.HeatLevel()
 				break
 			}
 		}
 	} else {
-		// Use binary search for bigger data slices.
+		// Use a binary search for bigger data slices.
 		i := sort.Search(len(data), func(i int) bool {
 			return data[i].line >= uint32(line)
 		})
 		if i < len(data) && data[i].line == uint32(line) {
-			pt := &data[i]
-			result.Local = int(pt.flags.GetLocalLevel())
-			result.Global = int(pt.flags.GetGlobalLevel())
+			result = data[i].HeatLevel()
 		}
 	}
 
 	return result
+}
+
+func (index *Index) queryLineRange(filename string, lineFrom, lineTo int, fn func(HeatLevel) bool) {
+	if lineFrom > lineTo {
+		panic("lineFrom > lineTo")
+	}
+
+	f, ok := index.byFilename[filename]
+	if !ok {
+		return
+	}
+
+	// A quick range check to avoid the search.
+	if int(f.maxLine) < lineFrom || int(f.minLine) > lineTo {
+		return
+	}
+
+	// Narrow the search window by the data points range.
+	if int(f.minLine) > lineFrom {
+		lineFrom = int(f.minLine)
+	}
+	if int(f.maxLine) < lineTo {
+		lineTo = int(f.maxLine)
+	}
+
+	data := index.dataPoints[f.dataFrom:f.dataTo]
+
+	// It's possible to optimize the case where f.minLine=lineFrom && f.maxLine=lineTo,
+	// where we would just walk the entire data slice, but
+	// that use case doesn't look compelling enough to add an extra branch to the code.
+	i := sort.Search(len(data), func(i int) bool {
+		return data[i].line >= uint32(lineFrom)
+	})
+	if i < len(data) && data[i].line == uint32(lineFrom) {
+		// i is a first matching entry, the leftmost one.
+		if !fn(data[i].HeatLevel()) {
+			return
+		}
+		// All data points until lineTo are matched too.
+		for j := i + 1; j < len(data) && data[j].line <= uint32(lineTo); j++ {
+			if !fn(data[j].HeatLevel()) {
+				return
+			}
+		}
+	}
 }

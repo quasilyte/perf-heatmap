@@ -51,6 +51,13 @@ type dataPoint struct {
 	value     int64
 }
 
+func (pt *dataPoint) HeatLevel() HeatLevel {
+	return HeatLevel{
+		Local:  pt.flags.GetLocalLevel(),
+		Global: pt.flags.GetGlobalLevel(),
+	}
+}
+
 func (pt dataPoint) String() string {
 	return fmt.Sprintf("{%d %s}", pt.value, pt.flags)
 }

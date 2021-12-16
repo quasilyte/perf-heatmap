@@ -153,3 +153,41 @@ func (index *Index) QueryFunc(filename, funcName string) HeatLevel {
 	}
 	return result
 }
+
+func (index *Index) QueryLine(filename string, line int) HeatLevel {
+	var result HeatLevel
+	f, ok := index.byFilename[filename]
+	if !ok {
+		return result
+	}
+
+	// Quick range check to avoid the search.
+	if line < int(f.minLine) || line > int(f.maxLine) {
+		return result
+	}
+
+	data := index.dataPoints[f.dataFrom:f.dataTo]
+	if len(data) <= 8 {
+		// Short data slice, use linear search.
+		for i := range data {
+			pt := &data[i]
+			if pt.line == uint32(line) {
+				result.Local = int(pt.flags.GetLocalLevel())
+				result.Global = int(pt.flags.GetGlobalLevel())
+				break
+			}
+		}
+	} else {
+		// Use binary search for bigger data slices.
+		i := sort.Search(len(data), func(i int) bool {
+			return data[i].line >= uint32(line)
+		})
+		if i < len(data) && data[i].line == uint32(line) {
+			pt := &data[i]
+			result.Local = int(pt.flags.GetLocalLevel())
+			result.Global = int(pt.flags.GetGlobalLevel())
+		}
+	}
+
+	return result
+}

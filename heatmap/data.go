@@ -51,10 +51,19 @@ type dataPoint struct {
 	value     int64
 }
 
+func (pt dataPoint) String() string {
+	return fmt.Sprintf("{%d %s}", pt.value, pt.flags)
+}
+
 // Upper 3 bits are for the local level value.
 // Next 3 bits are for the global level value.
 // Other (10) lower bits are bit flags.
 type dataPointFlags uint16
+
+func (flags dataPointFlags) String() string {
+	return fmt.Sprintf("<local=%d global=%d>",
+		flags.GetLocalLevel(), flags.GetGlobalLevel())
+}
 
 func (flags *dataPointFlags) GetLocalLevel() int {
 	const mask = (0b111 << (16 - 3))

@@ -106,7 +106,8 @@ func (w *profileWalker) Walk() error {
 			allPoints = append(allPoints, *pt)
 			if pt.line > f.maxLine {
 				f.maxLine = pt.line
-			} else if pt.line < f.minLine {
+			}
+			if pt.line < f.minLine {
 				f.minLine = pt.line
 			}
 		}

@@ -259,6 +259,64 @@ func TestAddProfile(t *testing.T) {
 					newSampleSet(500, []int{4})),
 				newFuncSampleSet("a.go/f2",
 					newSampleSet(150, []int{6}),
+					newSampleSet(160, []int{6}),
+					newSampleSet(80, []int{10}),
+					newSampleSet(40, []int{11}),
+					newSampleSet(150, []int{14}),
+					newSampleSet(160, []int{15}),
+					newSampleSet(80, []int{16}),
+					newSampleSet(40, []int{16}),
+					newSampleSet(150, []int{17}),
+					newSampleSet(160, []int{19}),
+					newSampleSet(80, []int{24}),
+					newSampleSet(40, []int{28})),
+				newFuncSampleSet("b.go/f",
+					newSampleSet(40, []int{5, 6}),
+					newSampleSet(40, []int{5, 7}),
+					newSampleSet(40, []int{5, 7}),
+					newSampleSet(40, []int{5, 6}),
+					newSampleSet(40, []int{5, 6})),
+				newFuncSampleSet("c.go/f",
+					newSampleSet(1, []int{1}),
+					newSampleSet(2, []int{1}),
+					newSampleSet(3, []int{1})),
+			),
+			config: IndexConfig{Threshold: 1},
+			want: []string{
+				"func f1 (L=5 G=5)",
+				"a.go:1: V=100 L=2 G=2",
+				"a.go:2: V=150 L=3 G=3",
+				"a.go:3: V=175 L=4 G=4",
+				"a.go:4: V=500 L=5 G=5",
+				"func f2 (L=5 G=5)",
+				"a.go:6: V=310 L=5 G=5",
+				"a.go:10: V= 80 L=1 G=2",
+				"a.go:11: V= 40 L=1 G=1",
+				"a.go:14: V=150 L=3 G=3",
+				"a.go:15: V=160 L=4 G=4",
+				"a.go:16: V=120 L=2 G=3",
+				"a.go:17: V=150 L=3 G=4",
+				"a.go:19: V=160 L=4 G=4",
+				"a.go:24: V= 80 L=2 G=2",
+				"a.go:28: V= 40 L=1 G=1",
+				"func f (L=5 G=5)",
+				"b.go:5: V=200 L=5 G=5",
+				"b.go:6: V=120 L=4 G=2",
+				"b.go:7: V= 80 L=3 G=1",
+				"func f (L=5 G=1)",
+				"c.go:1: V=  6 L=5 G=1",
+			},
+		},
+
+		{
+			samples: joinSamples(
+				newFuncSampleSet("a.go/f1",
+					newSampleSet(100, []int{1, 2, 3}),
+					newSampleSet(50, []int{2, 3}),
+					newSampleSet(25, []int{3}),
+					newSampleSet(500, []int{4})),
+				newFuncSampleSet("a.go/f2",
+					newSampleSet(150, []int{6}),
 					newSampleSet(200, []int{6}),
 					newSampleSet(80, []int{10}),
 					newSampleSet(40, []int{11})),
@@ -385,7 +443,7 @@ func TestAddProfile(t *testing.T) {
 
 	validateIndex := func(t *testing.T, index *Index) {
 		for filename, f := range index.byFilename {
-			funcnames := make([]string, len(f.funcs))
+			funcnames := make([]string, 0, len(f.funcs))
 			for _, fn := range f.funcs {
 				funcnames = append(funcnames, fn.name)
 				haveValues := index.QueryFunc(filename, fn.name)
@@ -396,6 +454,23 @@ func TestAddProfile(t *testing.T) {
 			}
 			if !sort.IsSorted(sort.StringSlice(funcnames)) {
 				t.Fatalf("%s funcs are not sorted correctly", filename)
+			}
+			data := index.dataPoints[f.dataFrom:f.dataTo]
+			linesSlice := make([]int, 0, len(data))
+			for _, pt := range data {
+				linesSlice = append(linesSlice, int(pt.line))
+				haveValues := index.QueryLine(filename, int(pt.line))
+				wantValues := HeatLevel{Local: pt.flags.GetLocalLevel(), Global: pt.flags.GetGlobalLevel()}
+				if haveValues != wantValues {
+					t.Fatalf("QueryLine(%s, %d): invalid heat values\nhave: %#v\nwant: %#v",
+						filename, pt.line, haveValues, wantValues)
+				}
+			}
+			if f.minLine > f.maxLine {
+				t.Fatalf("%s minLine > maxLine", filename)
+			}
+			if !sort.IsSorted(sort.IntSlice(linesSlice)) {
+				t.Fatalf("%s data points are not sorted correctly", filename)
 			}
 		}
 	}

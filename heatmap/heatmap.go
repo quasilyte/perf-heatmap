@@ -26,12 +26,11 @@ type Index struct {
 
 type IndexConfig struct {
 	// Threshold specifies where is the line between the "cold" and "hot" code.
-	// If unset (0), the default value of 0.25 will be implied.
+	// If unset (0), the default value of 0.5 will be implied.
 	//
 	// The threshould value can be interpreted in this way: what percentage
-	// of top sample records we're marking as hot. For 0.25 it's top 25% results.
-	// For 0.5 we're taking the more significant half.
-	// 1.0 includes all results.
+	// of top sample records we're marking as hot. For 0.5 it's top 50% results.
+	// A value of 1.0 would includes all results.
 	//
 	// Threshould should be in the (0, 1.0] range.
 	//
@@ -52,7 +51,7 @@ type IndexConfig struct {
 // Use AddProfile method to populate it.
 func NewIndex(config IndexConfig) *Index {
 	if config.Threshold == 0 {
-		config.Threshold = 0.25
+		config.Threshold = 0.5
 	}
 	if config.Threshold <= 0 || config.Threshold > 1 {
 		panic("IndexConfig.Threshold should be in (0, 1.0] range")

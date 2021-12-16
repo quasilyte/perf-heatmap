@@ -42,7 +42,7 @@ func statMain(args []string) {
 func cmdStat(args []string) error {
 	config := heatmap.IndexConfig{}
 	fs := flag.NewFlagSet("perf-heatmap stat", flag.ExitOnError)
-	fs.Float64Var(&config.Threshold, "threshold", 0.25, `take this % of top records`)
+	fs.Float64Var(&config.Threshold, "threshold", 0.5, `take this % of top records`)
 	flagFilename := fs.String("filename", `.*`, `stat only files that match this regex`)
 	fs.Parse(args)
 
@@ -88,7 +88,7 @@ func cmdJson(args []string) error {
 	fs := flag.NewFlagSet("perf-heatmap stat", flag.ExitOnError)
 	flagValueFormat := fs.String("value-format", "cpu/microseconds",
 		`export to this value format`)
-	fs.Float64Var(&config.Threshold, "threshold", 0.25,
+	fs.Float64Var(&config.Threshold, "threshold", 0.5,
 		`take this % of top records`)
 	fs.Parse(args)
 

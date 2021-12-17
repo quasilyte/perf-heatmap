@@ -5,7 +5,6 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/quasilyte/go-ruleguard)](https://goreportcard.com/report/github.com/quasilyte/go-ruleguard)
 ![Code Coverage](https://codecov.io/gh/quasilyte/perf-heatmap/branch/master/graph/badge.svg)
 
-
 # perf-heatmap
 
 Create a heatmap index based on the [profile.proto](https://github.com/google/pprof/blob/master/proto/profile.proto) profile data.

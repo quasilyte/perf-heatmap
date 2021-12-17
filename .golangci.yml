@@ -39,8 +39,11 @@
   ],
   "linters-settings": {
     "gocritic": {
-      "enabled-checks": [
-        "commentedOutCode",
+      "enabled-tags": [
+        "style",
+        "diagnostic",
+        "performance",
+        "experimental",
       ],
     },
   },

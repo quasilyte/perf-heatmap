@@ -44,7 +44,7 @@ func cmdStat(args []string) error {
 	fs := flag.NewFlagSet("perf-heatmap stat", flag.ExitOnError)
 	fs.Float64Var(&config.Threshold, "threshold", 0.5, `take this % of top records`)
 	flagFilename := fs.String("filename", `.*`, `stat only files that match this regex`)
-	fs.Parse(args)
+	_ = fs.Parse(args)
 
 	argv := fs.Args()
 	if len(argv) != 1 {
@@ -83,19 +83,19 @@ func cmdStat(args []string) error {
 }
 
 func jsonMain(args []string) {
-	if err := cmdJson(args); err != nil {
+	if err := cmdJSON(args); err != nil {
 		log.Fatalf("perf-heatmap json: error: %v", err)
 	}
 }
 
-func cmdJson(args []string) error {
+func cmdJSON(args []string) error {
 	config := heatmap.IndexConfig{}
 	fs := flag.NewFlagSet("perf-heatmap stat", flag.ExitOnError)
 	flagValueFormat := fs.String("value-format", "cpu/microseconds",
 		`export to this value format`)
 	fs.Float64Var(&config.Threshold, "threshold", 0.5,
 		`take this % of top records`)
-	fs.Parse(args)
+	_ = fs.Parse(args)
 
 	var valueMultiplier float64
 	switch *flagValueFormat {

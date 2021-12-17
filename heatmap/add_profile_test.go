@@ -36,11 +36,19 @@ func TestAddProfile(t *testing.T) {
 		want     HeatLevel
 	}
 
+	type testRangeQuery struct {
+		filename string
+		fromLine int
+		toLine   int
+		want     []HeatLevel
+	}
+
 	type testCase struct {
 		buildProfile func() *profile.Profile
 		config       IndexConfig
 		want         []string
 		queries      []testQuery
+		rangeQueries []testRangeQuery
 	}
 
 	tests := []testCase{
@@ -426,6 +434,157 @@ func TestAddProfile(t *testing.T) {
 				"a.go:9: V=101 L=1 G=1",
 			},
 		},
+
+		{
+			buildProfile: newTestProfileBuilder().
+				AddSamples("file.go/testfunc",
+					100, []int{207},
+					100, []int{500, 305},
+					100, []int{207},
+					100, []int{200, 205, 201},
+					100, []int{205},
+					100, []int{100},
+					100, []int{100, 200},
+					10, []int{207},
+					10, []int{500, 305},
+					10, []int{207},
+					10, []int{200, 205, 201},
+					10, []int{205},
+					10, []int{100},
+					10, []int{100, 200},
+					92, []int{207},
+					92, []int{500, 305},
+					92, []int{207},
+					92, []int{200, 205, 201},
+					92, []int{205},
+					92, []int{100},
+					92, []int{100, 200},
+					49, []int{207},
+					49, []int{500, 305},
+					49, []int{207},
+					49, []int{200, 205, 201},
+					49, []int{205},
+					49, []int{100},
+					49, []int{100, 200},
+					24, []int{207},
+					24, []int{500, 305},
+					24, []int{207},
+					24, []int{200, 205, 201},
+					24, []int{205},
+					24, []int{100},
+					24, []int{100, 200},
+					30, []int{207},
+					30, []int{500, 305},
+					30, []int{207},
+					30, []int{200, 205, 201},
+					30, []int{205},
+					30, []int{100},
+					30, []int{100, 200},
+					15, []int{207},
+					15, []int{500, 305},
+					15, []int{207},
+					15, []int{200, 205, 201},
+					15, []int{205},
+					15, []int{100},
+					15, []int{100, 200},
+					15, []int{100, 200},
+					15, []int{100},
+					15, []int{205},
+					15, []int{200, 205, 201},
+					15, []int{207},
+					15, []int{500, 305},
+					15, []int{207},
+					30, []int{100, 200},
+					30, []int{100},
+					30, []int{205},
+					30, []int{200, 205, 201},
+					30, []int{207},
+					30, []int{500, 305},
+					30, []int{207},
+					24, []int{100, 200},
+					24, []int{100},
+					24, []int{205},
+					24, []int{200, 205, 201},
+					24, []int{207},
+					24, []int{500, 305},
+					24, []int{207},
+					49, []int{100, 200},
+					49, []int{100},
+					49, []int{205},
+					49, []int{200, 205, 201},
+					49, []int{207},
+					49, []int{500, 305},
+					49, []int{207},
+					92, []int{100, 200},
+					92, []int{100},
+					92, []int{205},
+					92, []int{200, 205, 201},
+					92, []int{207},
+					92, []int{500, 305},
+					92, []int{207},
+					10, []int{100, 200},
+					10, []int{100},
+					10, []int{205},
+					10, []int{200, 205, 201},
+					10, []int{207},
+					10, []int{500, 305},
+					10, []int{207},
+					100, []int{100, 200},
+					100, []int{100},
+					100, []int{205},
+					100, []int{200, 205, 201},
+					100, []int{207},
+					100, []int{500, 305},
+					100, []int{207}).
+				Build,
+			config: IndexConfig{Threshold: 1},
+			want: []string{
+				"func testfunc (L=5 G=5)",
+				"file.go:100: V=1280 L=3 G=3",
+				"file.go:200: V=1280 L=3 G=3",
+				"file.go:201: V=640 L=1 G=1",
+				"file.go:205: V=1280 L=4 G=4",
+				"file.go:207: V=1280 L=5 G=5",
+				"file.go:305: V=640 L=1 G=1",
+				"file.go:500: V=640 L=2 G=2",
+			},
+			rangeQueries: []testRangeQuery{
+				{
+					filename: "file.go",
+					fromLine: 110,
+					toLine:   150,
+					want:     []HeatLevel{},
+				},
+				// {
+				// 	filename: "file.go",
+				// 	fromLine: 195,
+				// 	toLine:   205,
+				// 	want: []HeatLevel{
+				// 		{3, 3},
+				// 		{1, 1},
+				// 		{4, 4},
+				// 	},
+				// },
+				// {
+				// 	filename: "file.go",
+				// 	fromLine: 200,
+				// 	toLine:   205,
+				// 	want: []HeatLevel{
+				// 		{3, 3},
+				// 		{1, 1},
+				// 		{4, 4},
+				// 	},
+				// },
+				// {
+				// 	filename: "file.go",
+				// 	fromLine: 202,
+				// 	toLine:   205,
+				// 	want: []HeatLevel{
+				// 		{4, 4},
+				// 	},
+				// },
+			},
+		},
 	}
 
 	validateIndex := func(t *testing.T, index *Index) {
@@ -512,6 +671,17 @@ func TestAddProfile(t *testing.T) {
 				want := q.want
 				if diff := cmp.Diff(have, want); diff != "" {
 					t.Errorf("QueryLine(%q, %d) results:\n(+want -have)\n%s", q.filename, q.line, diff)
+				}
+			}
+			for _, q := range test.rangeQueries {
+				have := []HeatLevel{}
+				index.queryLineRange(q.filename, q.fromLine, q.toLine, func(l HeatLevel) bool {
+					have = append(have, l)
+					return true
+				})
+				want := q.want
+				if diff := cmp.Diff(have, want); diff != "" {
+					t.Errorf("QueryLineRange(%q, %d, %d) results:\n(+want -have)\n%s", q.filename, q.fromLine, q.toLine, diff)
 				}
 			}
 		})

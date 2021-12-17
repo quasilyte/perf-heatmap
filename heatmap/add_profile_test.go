@@ -405,8 +405,7 @@ func TestAddProfile(t *testing.T) {
 				newFuncSampleSet("a.go/f6", newSampleSet(104, []int{6})),
 				newFuncSampleSet("a.go/f7", newSampleSet(103, []int{7})),
 				newFuncSampleSet("a.go/f8", newSampleSet(102, []int{8})),
-				newFuncSampleSet("a.go/f9", newSampleSet(101, []int{9})),
-			),
+				newFuncSampleSet("a.go/f9", newSampleSet(101, []int{9}))),
 			config: IndexConfig{Threshold: 1},
 			want: []string{
 				"func f1 (L=5 G=5)",
@@ -442,8 +441,7 @@ func TestAddProfile(t *testing.T) {
 				newFuncSampleSet("a.go/f9", newSampleSet(101, []int{1})),
 				newFuncSampleSet("a.go/f5", newSampleSet(105, []int{1})),
 				newFuncSampleSet("a.go/f8", newSampleSet(102, []int{1})),
-				newFuncSampleSet("a.go/f7", newSampleSet(103, []int{1})),
-			),
+				newFuncSampleSet("a.go/f7", newSampleSet(103, []int{1}))),
 			config: IndexConfig{Threshold: 1},
 			want: []string{
 				"func f1 (L=5 G=5)",
@@ -461,8 +459,7 @@ func TestAddProfile(t *testing.T) {
 				newFuncSampleSet("a.go/f6", newSampleSet(104, []int{3})),
 				newFuncSampleSet("a.go/f7", newSampleSet(103, []int{4})),
 				newFuncSampleSet("a.go/f8", newSampleSet(102, []int{8})),
-				newFuncSampleSet("a.go/f9", newSampleSet(101, []int{9})),
-			),
+				newFuncSampleSet("a.go/f9", newSampleSet(101, []int{9}))),
 			config: IndexConfig{Threshold: 1},
 			want: []string{
 				"func f4 (L=3 G=3)",

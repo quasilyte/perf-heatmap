@@ -18,18 +18,18 @@ func TestForChunks(t *testing.T) {
 		},
 
 		{
-			make([]dataPoint, 0),
+			[]dataPoint{},
 			5,
 			[]int{},
 		},
 		{
-			make([]dataPoint, 0),
+			[]dataPoint{},
 			0,
 			[]int{},
 		},
 
 		{
-			make([]dataPoint, 0),
+			[]dataPoint{},
 			2,
 			[]int{},
 		},

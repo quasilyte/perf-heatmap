@@ -1,6 +1,8 @@
 package heatmap
 
-import "fmt"
+import (
+	"fmt"
+)
 
 const maxHeatLevel = 5
 

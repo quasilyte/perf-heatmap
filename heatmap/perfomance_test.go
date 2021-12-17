@@ -18,7 +18,7 @@ func BenchmarkQuery(b *testing.B) {
 		b.Run(key, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				levels := 0
-				suite.i.QueryLineRange(filename, fromLine, toLine, func(level HeatLevel) bool {
+				suite.i.QueryLineRange(filename, fromLine, toLine, func(line int, level HeatLevel) bool {
 					levels += level.Local + level.Global
 					return true
 				})

@@ -173,9 +173,9 @@ func (index *Index) QueryFunc(filename, funcName string) HeatLevel {
 // QueryLineRange scans the file data points that are located in [lineFrom, lineTo] range.
 // fn is called for every matching data point.
 // Returning false from the callback causes the iteration to stop early.
-func (index *Index) QueryLineRange(filename string, lineFrom, lineTo int, fn func(HeatLevel) bool) {
+func (index *Index) QueryLineRange(filename string, lineFrom, lineTo int, fn func(line int, level HeatLevel) bool) {
 	if lineFrom == lineTo {
-		fn(index.QueryLine(filename, lineFrom))
+		fn(lineFrom, index.QueryLine(filename, lineFrom))
 		return
 	}
 	index.queryLineRange(filename, lineFrom, lineTo, fn)
@@ -216,7 +216,7 @@ func (index *Index) QueryLine(filename string, line int) HeatLevel {
 	return result
 }
 
-func (index *Index) queryLineRange(filename string, lineFrom, lineTo int, fn func(HeatLevel) bool) {
+func (index *Index) queryLineRange(filename string, lineFrom, lineTo int, fn func(line int, level HeatLevel) bool) {
 	if lineFrom > lineTo {
 		panic("lineFrom > lineTo")
 	}
@@ -248,13 +248,15 @@ func (index *Index) queryLineRange(filename string, lineFrom, lineTo int, fn fun
 		return data[i].line >= uint32(lineFrom)
 	})
 	if i < len(data) && data[i].line >= uint32(lineFrom) && data[i].line <= uint32(lineTo) {
+		pt := &data[i]
 		// i is a first matching entry, the leftmost one.
-		if !fn(data[i].HeatLevel()) {
+		if !fn(int(pt.line), pt.HeatLevel()) {
 			return
 		}
 		// All data points until lineTo are matched too.
 		for j := i + 1; j < len(data) && data[j].line <= uint32(lineTo); j++ {
-			if !fn(data[j].HeatLevel()) {
+			pt := &data[j]
+			if !fn(int(pt.line), pt.HeatLevel()) {
 				return
 			}
 		}

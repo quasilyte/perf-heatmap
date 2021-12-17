@@ -616,8 +616,11 @@ func TestAddProfile(t *testing.T) {
 						filename, pt.line, haveValues, wantValues)
 				}
 				var haveValues2 HeatLevel
-				index.queryLineRange(filename, int(pt.line), int(pt.line), func(l HeatLevel) bool {
+				index.queryLineRange(filename, int(pt.line), int(pt.line), func(line int, l HeatLevel) bool {
 					haveValues2 = l
+					if line != int(pt.line) {
+						t.Fatalf("incorrect line from the queryLineRange()")
+					}
 					return true
 				})
 				if haveValues2 != wantValues {
@@ -625,7 +628,7 @@ func TestAddProfile(t *testing.T) {
 						filename, pt.line, pt.line, haveValues2, wantValues)
 				}
 				var haveValues3 HeatLevel
-				index.queryLineRange(filename, int(pt.line), int(pt.line), func(l HeatLevel) bool {
+				index.queryLineRange(filename, int(pt.line), int(pt.line), func(line int, l HeatLevel) bool {
 					haveValues3 = l
 					return true
 				})
@@ -634,7 +637,7 @@ func TestAddProfile(t *testing.T) {
 						filename, pt.line, pt.line, haveValues3, wantValues)
 				}
 				haveTotal := 0
-				index.queryLineRange(filename, 1, int(f.maxLine), func(l HeatLevel) bool {
+				index.queryLineRange(filename, 1, int(f.maxLine), func(line int, l HeatLevel) bool {
 					haveTotal++
 					return true
 				})
@@ -675,7 +678,7 @@ func TestAddProfile(t *testing.T) {
 			}
 			for _, q := range test.rangeQueries {
 				have := []HeatLevel{}
-				index.queryLineRange(q.filename, q.fromLine, q.toLine, func(l HeatLevel) bool {
+				index.queryLineRange(q.filename, q.fromLine, q.toLine, func(line int, l HeatLevel) bool {
 					have = append(have, l)
 					return true
 				})

@@ -2,87 +2,17 @@ package heatmap
 
 import (
 	"fmt"
+	"math/rand"
 	"path"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/pprof/profile"
 )
 
 func TestAddProfile(t *testing.T) {
-	type sampleSet struct {
-		funcname string
-		value    int
-		lines    []int
-	}
-
-	newFuncSampleSet := func(funcname string, samples ...sampleSet) []sampleSet {
-		result := make([]sampleSet, len(samples))
-		copy(result, samples)
-		for i := range result {
-			result[i].funcname = funcname
-		}
-		return result
-	}
-	newSampleSet := func(value int, lines []int) sampleSet {
-		return sampleSet{value: value, lines: lines}
-	}
-	joinSamples := func(sets ...[]sampleSet) []sampleSet {
-		var result []sampleSet
-		for _, set := range sets {
-			result = append(result, set...)
-		}
-		return result
-	}
-
-	createProfile := func(allSamples []sampleSet) *profile.Profile {
-		p := &profile.Profile{
-			SampleType: []*profile.ValueType{
-				{Type: "samples", Unit: "count"},
-				{Type: "cpu", Unit: "nanoseconds"},
-			},
-		}
-		funcs := map[string]*profile.Function{}
-		newSample := func() *profile.Sample {
-			return &profile.Sample{
-				Location: []*profile.Location{
-					{},
-				},
-			}
-		}
-		getFunction := func(filename, funcName string) *profile.Function {
-			k := filename + "/" + funcName
-			f, ok := funcs[k]
-			if !ok {
-				f = &profile.Function{
-					Name:     funcName,
-					Filename: filename,
-				}
-				funcs[k] = f
-			}
-			return f
-		}
-		var outSamples []*profile.Sample
-		for _, set := range allSamples {
-			funcName := path.Base(set.funcname)
-			filename := path.Dir(set.funcname)
-			current := newSample()
-			current.Value = []int64{0, int64(set.value)}
-			loc := current.Location[0]
-			outSamples = append(outSamples, current)
-			f := getFunction(filename, funcName)
-			for _, l := range set.lines {
-				loc.Line = append(loc.Line, profile.Line{
-					Line:     int64(l),
-					Function: f,
-				})
-			}
-		}
-		p.Sample = outSamples
-		return p
-	}
-
 	dumpIndex := func(index *Index) []string {
 		var lines []string
 		for _, filename := range index.CollectFilenames() {
@@ -107,20 +37,18 @@ func TestAddProfile(t *testing.T) {
 	}
 
 	type testCase struct {
-		samples   []sampleSet
-		config    IndexConfig
-		want      []string
-		noReverse bool
-		queries   []testQuery
+		buildProfile func() *profile.Profile
+		config       IndexConfig
+		want         []string
+		queries      []testQuery
 	}
 
 	tests := []testCase{
 		{
-			samples: joinSamples(
-				newFuncSampleSet("buffer.go/example",
-					newSampleSet(75, []int{10}),
-					newSampleSet(25, []int{10})),
-			),
+			buildProfile: newTestProfileBuilder().
+				AddSamples("buffer.go/example", 25, []int{10}).
+				AddSamples("buffer.go/example", 75, []int{10}).
+				Build,
 			config: IndexConfig{Threshold: 0.25},
 			want: []string{
 				"func example (L=5 G=5)",
@@ -129,10 +57,23 @@ func TestAddProfile(t *testing.T) {
 		},
 
 		{
-			samples: joinSamples(
-				newFuncSampleSet("/home/gopher/buffer.go/example",
-					newSampleSet(75, []int{10})),
-			),
+			buildProfile: newTestProfileBuilder().
+				AddSamples("buffer.go/example",
+					25, []int{10},
+					75, []int{10}).
+				Build,
+			config: IndexConfig{Threshold: 0.25},
+			want: []string{
+				"func example (L=5 G=5)",
+				"buffer.go:10: V=100 L=5 G=5",
+			},
+		},
+
+		{
+			buildProfile: newTestProfileBuilder().
+				AddSamples("/home/gopher/buffer.go/example",
+					75, []int{10}).
+				Build,
 			config: IndexConfig{
 				TrimPrefix: "/home/gopher/",
 				Threshold:  0.25,
@@ -150,10 +91,10 @@ func TestAddProfile(t *testing.T) {
 		},
 
 		{
-			samples: joinSamples(
-				newFuncSampleSet("/home/gopher/buffer.go/example",
-					newSampleSet(75, []int{10})),
-			),
+			buildProfile: newTestProfileBuilder().
+				AddSamples("/home/gopher/buffer.go/example",
+					75, []int{10}).
+				Build,
 			config: IndexConfig{Threshold: 0.25},
 			want: []string{
 				"func example (L=5 G=5)",
@@ -168,11 +109,11 @@ func TestAddProfile(t *testing.T) {
 		},
 
 		{
-			samples: joinSamples(
-				newFuncSampleSet("buffer.go/example",
-					newSampleSet(75, []int{11, 12}),
-					newSampleSet(25, []int{10})),
-			),
+			buildProfile: newTestProfileBuilder().
+				AddSamples("buffer.go/example",
+					75, []int{11, 12},
+					25, []int{10}).
+				Build,
 			config: IndexConfig{Threshold: 0.25},
 			want: []string{
 				"func example (L=5 G=5)",
@@ -183,14 +124,14 @@ func TestAddProfile(t *testing.T) {
 		},
 
 		{
-			samples: joinSamples(
-				newFuncSampleSet("buffer.go/example",
-					newSampleSet(10, []int{5}),
-					newSampleSet(11, []int{4}),
-					newSampleSet(12, []int{3}),
-					newSampleSet(13, []int{2}),
-					newSampleSet(14, []int{1})),
-			),
+			buildProfile: newTestProfileBuilder().
+				AddSamples("buffer.go/example",
+					10, []int{5},
+					11, []int{4},
+					12, []int{3},
+					13, []int{2},
+					14, []int{1}).
+				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
 				"func example (L=5 G=5)",
@@ -203,14 +144,14 @@ func TestAddProfile(t *testing.T) {
 		},
 
 		{
-			samples: joinSamples(
-				newFuncSampleSet("buffer.go/example",
-					newSampleSet(10, []int{5}),
-					newSampleSet(11, []int{4}),
-					newSampleSet(12, []int{3}),
-					newSampleSet(13, []int{2}),
-					newSampleSet(14, []int{1})),
-			),
+			buildProfile: newTestProfileBuilder().
+				AddSamples("buffer.go/example",
+					10, []int{5},
+					11, []int{4},
+					12, []int{3},
+					13, []int{2},
+					14, []int{1}).
+				Build,
 			config: IndexConfig{Threshold: 0.6},
 			want: []string{
 				"func example (L=5 G=5)",
@@ -223,23 +164,23 @@ func TestAddProfile(t *testing.T) {
 		},
 
 		{
-			samples: joinSamples(
-				newFuncSampleSet("a.go/f2",
-					newSampleSet(100, []int{1, 2, 3}),
-					newSampleSet(50, []int{2, 3}),
-					newSampleSet(25, []int{3})),
-				newFuncSampleSet("a.go/f1",
-					newSampleSet(150, []int{6}),
-					newSampleSet(160, []int{6}),
-					newSampleSet(80, []int{10}),
-					newSampleSet(40, []int{11})),
-				newFuncSampleSet("b.go/f",
-					newSampleSet(40, []int{5, 6}),
-					newSampleSet(40, []int{5, 6}),
-					newSampleSet(40, []int{5, 6}),
-					newSampleSet(40, []int{5, 6}),
-					newSampleSet(40, []int{5, 6})),
-			),
+			buildProfile: newTestProfileBuilder().
+				AddSamples("a.go/f2",
+					100, []int{1, 2, 3},
+					50, []int{2, 3},
+					25, []int{3}).
+				AddSamples("a.go/f1",
+					150, []int{6},
+					160, []int{6},
+					80, []int{10},
+					40, []int{11}).
+				AddSamples("b.go/f",
+					40, []int{5, 6},
+					40, []int{5, 6},
+					40, []int{5, 6},
+					40, []int{5, 6},
+					40, []int{5, 6}).
+				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
 				"func f2 (L=4 G=3)",
@@ -259,24 +200,24 @@ func TestAddProfile(t *testing.T) {
 		},
 
 		{
-			samples: joinSamples(
-				newFuncSampleSet("a.go/f1",
-					newSampleSet(100, []int{1, 2, 3}),
-					newSampleSet(50, []int{2, 3}),
-					newSampleSet(25, []int{3}),
-					newSampleSet(500, []int{4})),
-				newFuncSampleSet("a.go/f2",
-					newSampleSet(150, []int{6}),
-					newSampleSet(160, []int{6}),
-					newSampleSet(80, []int{10}),
-					newSampleSet(40, []int{11})),
-				newFuncSampleSet("b.go/f",
-					newSampleSet(40, []int{5, 6}),
-					newSampleSet(40, []int{5, 6}),
-					newSampleSet(40, []int{5, 6}),
-					newSampleSet(40, []int{5, 6}),
-					newSampleSet(40, []int{5, 6})),
-			),
+			buildProfile: newTestProfileBuilder().
+				AddSamples("a.go/f1",
+					100, []int{1, 2, 3},
+					50, []int{2, 3},
+					25, []int{3},
+					500, []int{4}).
+				AddSamples("a.go/f2",
+					150, []int{6},
+					160, []int{6},
+					80, []int{10},
+					40, []int{11}).
+				AddSamples("b.go/f",
+					40, []int{5, 6},
+					40, []int{5, 6},
+					40, []int{5, 6},
+					40, []int{5, 6},
+					40, []int{5, 6}).
+				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
 				"func f1 (L=5 G=5)",
@@ -297,36 +238,36 @@ func TestAddProfile(t *testing.T) {
 		},
 
 		{
-			samples: joinSamples(
-				newFuncSampleSet("a.go/f1",
-					newSampleSet(100, []int{1, 2, 3}),
-					newSampleSet(50, []int{2, 3}),
-					newSampleSet(25, []int{3}),
-					newSampleSet(500, []int{4})),
-				newFuncSampleSet("a.go/f2",
-					newSampleSet(150, []int{6}),
-					newSampleSet(160, []int{6}),
-					newSampleSet(80, []int{10}),
-					newSampleSet(40, []int{11}),
-					newSampleSet(150, []int{14}),
-					newSampleSet(160, []int{15}),
-					newSampleSet(80, []int{16}),
-					newSampleSet(40, []int{16}),
-					newSampleSet(150, []int{17}),
-					newSampleSet(160, []int{19}),
-					newSampleSet(80, []int{24}),
-					newSampleSet(40, []int{28})),
-				newFuncSampleSet("b.go/f",
-					newSampleSet(40, []int{5, 6}),
-					newSampleSet(40, []int{5, 7}),
-					newSampleSet(40, []int{5, 7}),
-					newSampleSet(40, []int{5, 6}),
-					newSampleSet(40, []int{5, 6})),
-				newFuncSampleSet("c.go/f",
-					newSampleSet(1, []int{1}),
-					newSampleSet(2, []int{1}),
-					newSampleSet(3, []int{1})),
-			),
+			buildProfile: newTestProfileBuilder().
+				AddSamples("a.go/f1",
+					100, []int{1, 2, 3},
+					50, []int{2, 3},
+					25, []int{3},
+					500, []int{4}).
+				AddSamples("a.go/f2",
+					150, []int{6},
+					160, []int{6},
+					80, []int{10},
+					40, []int{11},
+					150, []int{14},
+					160, []int{15},
+					80, []int{16},
+					40, []int{16},
+					150, []int{17},
+					160, []int{19},
+					80, []int{24},
+					40, []int{28}).
+				AddSamples("b.go/f",
+					40, []int{5, 6},
+					40, []int{5, 7},
+					40, []int{5, 7},
+					40, []int{5, 6},
+					40, []int{5, 6}).
+				AddSamples("c.go/f",
+					1, []int{1},
+					2, []int{1},
+					3, []int{1}).
+				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
 				"func f1 (L=5 G=5)",
@@ -355,26 +296,26 @@ func TestAddProfile(t *testing.T) {
 		},
 
 		{
-			samples: joinSamples(
-				newFuncSampleSet("a.go/f1",
-					newSampleSet(100, []int{1, 2, 3}),
-					newSampleSet(50, []int{2, 3}),
-					newSampleSet(25, []int{3}),
-					newSampleSet(500, []int{4})),
-				newFuncSampleSet("a.go/f2",
-					newSampleSet(150, []int{6}),
-					newSampleSet(200, []int{6}),
-					newSampleSet(80, []int{10}),
-					newSampleSet(40, []int{11})),
-				newFuncSampleSet("b.go/f",
-					newSampleSet(40, []int{5, 6}),
-					newSampleSet(40, []int{5, 6}),
-					newSampleSet(40, []int{5, 6}),
-					newSampleSet(40, []int{5, 6}),
-					newSampleSet(40, []int{7}),
-					newSampleSet(145, []int{7, 6, 5}),
-					newSampleSet(40, []int{5, 6})),
-			),
+			buildProfile: newTestProfileBuilder().
+				AddSamples("a.go/f1",
+					100, []int{1, 2, 3},
+					50, []int{2, 3},
+					25, []int{3},
+					500, []int{4}).
+				AddSamples("a.go/f2",
+					150, []int{6},
+					200, []int{6},
+					80, []int{10},
+					40, []int{11}).
+				AddSamples("b.go/f",
+					40, []int{5, 6},
+					40, []int{5, 6},
+					40, []int{5, 6},
+					40, []int{5, 6},
+					40, []int{7},
+					145, []int{7, 6, 5},
+					40, []int{5, 6}).
+				Build,
 			config: IndexConfig{Threshold: 0.5},
 			want: []string{
 				"func f1 (L=5 G=5)",
@@ -396,16 +337,17 @@ func TestAddProfile(t *testing.T) {
 		},
 
 		{
-			samples: joinSamples(
-				newFuncSampleSet("a.go/f1", newSampleSet(109, []int{1})),
-				newFuncSampleSet("a.go/f2", newSampleSet(108, []int{2})),
-				newFuncSampleSet("a.go/f3", newSampleSet(107, []int{3})),
-				newFuncSampleSet("a.go/f4", newSampleSet(106, []int{4})),
-				newFuncSampleSet("a.go/f5", newSampleSet(105, []int{5})),
-				newFuncSampleSet("a.go/f6", newSampleSet(104, []int{6})),
-				newFuncSampleSet("a.go/f7", newSampleSet(103, []int{7})),
-				newFuncSampleSet("a.go/f8", newSampleSet(102, []int{8})),
-				newFuncSampleSet("a.go/f9", newSampleSet(101, []int{9}))),
+			buildProfile: newTestProfileBuilder().
+				AddSamples("a.go/f1", 109, []int{1}).
+				AddSamples("a.go/f2", 108, []int{2}).
+				AddSamples("a.go/f3", 107, []int{3}).
+				AddSamples("a.go/f4", 106, []int{4}).
+				AddSamples("a.go/f5", 105, []int{5}).
+				AddSamples("a.go/f6", 104, []int{6}).
+				AddSamples("a.go/f7", 103, []int{7}).
+				AddSamples("a.go/f8", 102, []int{8}).
+				AddSamples("a.go/f9", 101, []int{9}).
+				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
 				"func f1 (L=5 G=5)",
@@ -431,17 +373,18 @@ func TestAddProfile(t *testing.T) {
 
 		// All samples would point to the same line, resulting in a single data point.
 		{
-			noReverse: true,
-			samples: joinSamples(
-				newFuncSampleSet("a.go/f1", newSampleSet(109, []int{1})),
-				newFuncSampleSet("a.go/f2", newSampleSet(108, []int{1})),
-				newFuncSampleSet("a.go/f4", newSampleSet(106, []int{1})),
-				newFuncSampleSet("a.go/f3", newSampleSet(107, []int{1})),
-				newFuncSampleSet("a.go/f6", newSampleSet(104, []int{1})),
-				newFuncSampleSet("a.go/f9", newSampleSet(101, []int{1})),
-				newFuncSampleSet("a.go/f5", newSampleSet(105, []int{1})),
-				newFuncSampleSet("a.go/f8", newSampleSet(102, []int{1})),
-				newFuncSampleSet("a.go/f7", newSampleSet(103, []int{1}))),
+			buildProfile: newTestProfileBuilder().
+				Sorted().
+				AddSamples("a.go/f1", 109, []int{1}).
+				AddSamples("a.go/f2", 108, []int{1}).
+				AddSamples("a.go/f4", 106, []int{1}).
+				AddSamples("a.go/f3", 107, []int{1}).
+				AddSamples("a.go/f6", 104, []int{1}).
+				AddSamples("a.go/f9", 101, []int{1}).
+				AddSamples("a.go/f5", 105, []int{1}).
+				AddSamples("a.go/f8", 102, []int{1}).
+				AddSamples("a.go/f7", 103, []int{1}).
+				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
 				"func f1 (L=5 G=5)",
@@ -450,16 +393,17 @@ func TestAddProfile(t *testing.T) {
 		},
 
 		{
-			samples: joinSamples(
-				newFuncSampleSet("a.go/f1", newSampleSet(109, []int{5})),
-				newFuncSampleSet("a.go/f2", newSampleSet(108, []int{6})),
-				newFuncSampleSet("a.go/f3", newSampleSet(107, []int{7})),
-				newFuncSampleSet("a.go/f4", newSampleSet(106, []int{1})),
-				newFuncSampleSet("a.go/f5", newSampleSet(105, []int{2})),
-				newFuncSampleSet("a.go/f6", newSampleSet(104, []int{3})),
-				newFuncSampleSet("a.go/f7", newSampleSet(103, []int{4})),
-				newFuncSampleSet("a.go/f8", newSampleSet(102, []int{8})),
-				newFuncSampleSet("a.go/f9", newSampleSet(101, []int{9}))),
+			buildProfile: newTestProfileBuilder().
+				AddSamples("a.go/f1", 109, []int{5}).
+				AddSamples("a.go/f2", 108, []int{6}).
+				AddSamples("a.go/f3", 107, []int{7}).
+				AddSamples("a.go/f4", 106, []int{1}).
+				AddSamples("a.go/f5", 105, []int{2}).
+				AddSamples("a.go/f6", 104, []int{3}).
+				AddSamples("a.go/f7", 103, []int{4}).
+				AddSamples("a.go/f8", 102, []int{8}).
+				AddSamples("a.go/f9", 101, []int{9}).
+				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
 				"func f4 (L=3 G=3)",
@@ -552,7 +496,7 @@ func TestAddProfile(t *testing.T) {
 	run := func(t *testing.T, name string, test testCase) {
 		t.Helper()
 		t.Run(name, func(t *testing.T) {
-			p := createProfile(test.samples)
+			p := test.buildProfile()
 			index := NewIndex(test.config)
 			if err := index.AddProfile(p); err != nil {
 				t.Fatal(err)
@@ -576,13 +520,124 @@ func TestAddProfile(t *testing.T) {
 	for i := range tests {
 		test := tests[i]
 
-		run(t, fmt.Sprintf("test%d", i), test)
-
-		if !test.noReverse {
-			for i, j := 0, len(test.samples)-1; i < j; i, j = i+1, j-1 {
-				test.samples[i], test.samples[j] = test.samples[j], test.samples[i]
-			}
-			run(t, fmt.Sprintf("test%drev", i), test)
+		// Running the test several times with randomized profile
+		// samples order.
+		for j := 0; j < 2; j++ {
+			run(t, fmt.Sprintf("test%d_%d", i, j), test)
 		}
 	}
+}
+
+type testProfileBuilder struct {
+	samples map[string][]testProfileSample
+	sorted  bool
+}
+
+type testProfileSample struct {
+	value int
+	lines []int
+}
+
+func newTestProfileBuilder() *testProfileBuilder {
+	return &testProfileBuilder{
+		samples: make(map[string][]testProfileSample, 100),
+	}
+}
+
+func (b *testProfileBuilder) Sorted() *testProfileBuilder {
+	b.sorted = true
+	return b
+}
+
+func (b *testProfileBuilder) AddSamples(sym string, pairs ...interface{}) *testProfileBuilder {
+	if len(pairs)%2 != 0 {
+		panic("odd number of arguments")
+	}
+	list := make([]testProfileSample, 0, len(pairs)/2)
+	for i := 0; i < len(pairs); i += 2 {
+		value := pairs[i+0].(int)
+		lines := pairs[i+1].([]int)
+		list = append(list, testProfileSample{value: value, lines: lines})
+	}
+	b.samples[sym] = append(b.samples[sym], list...)
+	return b
+}
+
+func (b *testProfileBuilder) Build() *profile.Profile {
+	p := &profile.Profile{
+		SampleType: []*profile.ValueType{
+			{Type: "samples", Unit: "count"},
+			{Type: "cpu", Unit: "nanoseconds"},
+		},
+	}
+
+	funcs := map[string]*profile.Function{}
+	newSample := func() *profile.Sample {
+		return &profile.Sample{
+			Location: []*profile.Location{
+				{},
+			},
+		}
+	}
+	getFunction := func(filename, funcName string) *profile.Function {
+		k := filename + "/" + funcName
+		f, ok := funcs[k]
+		if !ok {
+			f = &profile.Function{
+				Name:     funcName,
+				Filename: filename,
+			}
+			funcs[k] = f
+		}
+		return f
+	}
+
+	var outSamples []*profile.Sample
+	for sym, symSampleSet := range b.samples {
+		funcName := path.Base(sym)
+		filename := path.Dir(sym)
+		f := getFunction(filename, funcName)
+
+		for _, s := range symSampleSet {
+			pprofSample := newSample()
+			pprofSample.Value = []int64{0, int64(s.value)}
+			dstLoc := pprofSample.Location[0]
+			outSamples = append(outSamples, pprofSample)
+			for _, line := range s.lines {
+				dstLoc.Line = append(dstLoc.Line, profile.Line{
+					Line:     int64(line),
+					Function: f,
+				})
+			}
+		}
+	}
+
+	p.Sample = outSamples
+
+	if b.sorted {
+		for _, s := range p.Sample {
+			for _, loc := range s.Location {
+				sort.Slice(loc.Line, func(i, j int) bool {
+					return loc.Line[i].Function.Name < loc.Line[j].Function.Name
+				})
+			}
+		}
+		sort.Slice(p.Sample, func(i, j int) bool {
+			return p.Sample[i].Value[1] > p.Sample[j].Value[1]
+		})
+	} else {
+		rand.Seed(time.Now().UnixNano())
+		for _, s := range p.Sample {
+			for _, loc := range s.Location {
+				rand.Shuffle(len(loc.Line), func(i, j int) {
+					loc.Line[i], loc.Line[j] = loc.Line[j], loc.Line[i]
+				})
+			}
+		}
+		rand.Shuffle(len(p.Sample), func(i, j int) {
+			p.Sample[i], p.Sample[j] = p.Sample[j], p.Sample[i]
+		})
+	}
+
+	return p
 }

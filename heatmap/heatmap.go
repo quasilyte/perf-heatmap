@@ -247,7 +247,7 @@ func (index *Index) queryLineRange(filename string, lineFrom, lineTo int, fn fun
 	i := sort.Search(len(data), func(i int) bool {
 		return data[i].line >= uint32(lineFrom)
 	})
-	if i < len(data) && data[i].line == uint32(lineFrom) {
+	if i < len(data) && data[i].line >= uint32(lineFrom) && data[i].line <= uint32(lineTo) {
 		// i is a first matching entry, the leftmost one.
 		if !fn(data[i].HeatLevel()) {
 			return

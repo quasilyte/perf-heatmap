@@ -150,6 +150,7 @@ func (w *profileWalker) Walk() error {
 		filenameSet[filename] = uint32(i)
 	}
 
+	// Step 3: sort all functions.
 	funcs := make([]*funcIndexTemplate, 0, len(m))
 	for _, fn := range m {
 		fn.fileID = filenameSet[fn.origFilename]
@@ -167,7 +168,7 @@ func (w *profileWalker) Walk() error {
 		return f1.key.FuncName < f2.key.FuncName
 	})
 
-	// Step 3: put all aggregated points into one slice, bind data ranges to files.
+	// Step 4: put all aggregated points into one slice, bind data ranges to files.
 	allPoints := make([]dataPoint, 0, numDataPoints)
 	for _, fn := range funcs {
 		fn.dataFrom = uint32(len(allPoints))
@@ -182,6 +183,7 @@ func (w *profileWalker) Walk() error {
 		}
 		fn.dataTo = uint32(len(allPoints))
 
+		// Compute local heat levels.
 		funcData := allPoints[fn.dataFrom:fn.dataTo]
 		sort.Slice(funcData, func(i, j int) bool {
 			return pointGreater(funcData[i], funcData[j])
@@ -207,7 +209,7 @@ func (w *profileWalker) Walk() error {
 		})
 	}
 
-	// Pass 3: compute the global heat levels.
+	// Step 5: compute the global heat levels.
 	valueOrder := make([]uint32, len(allPoints))
 	for i := range allPoints {
 		valueOrder[i] = uint32(i)

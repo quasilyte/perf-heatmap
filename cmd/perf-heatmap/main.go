@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"regexp"
+	"sort"
 	"time"
 
 	"github.com/cespare/subcmd"
@@ -62,22 +63,18 @@ func cmdStat(args []string) error {
 		return err
 	}
 
-	for _, filename := range index.CollectFilenames() {
-		if !filenameRE.MatchString(filename) {
-			continue
+	currentFunc := ""
+	index.Inspect(func(s heatmap.LineStats) {
+		if !filenameRE.MatchString(s.Func.Filename) {
+			return
 		}
-		fmt.Printf("%s:\n", filename)
-		i := 0
-		currentFunc := ""
-		index.InspectFileLines(filename, func(s heatmap.LineStats) {
-			if currentFunc != s.Func.Name {
-				currentFunc = s.Func.Name
-				fmt.Printf("  func %s:\n", currentFunc)
-			}
-			fmt.Printf("    [%3d] line %4d: %6.2fs L=%d G=%d\n", i, s.LineNum, time.Duration(s.Value).Seconds(), s.HeatLevel, s.GlobalHeatLevel)
-			i++
-		})
-	}
+		if currentFunc != s.Func.ID {
+			currentFunc = s.Func.ID
+			fmt.Printf("  func %s.%s (%s):\n", s.Func.PkgName, currentFunc, s.Func.Filename)
+		}
+		fmt.Printf("    line %4d: %6.2fs L=%d G=%d\n",
+			s.LineNum, time.Duration(s.Value).Seconds(), s.HeatLevel, s.GlobalHeatLevel)
+	})
 
 	return nil
 }
@@ -122,33 +119,41 @@ func cmdJSON(args []string) error {
 
 	result := &jsonRootIndex{}
 
-	allFilenames := index.CollectFilenames()
+	var filesList []*jsonFileIndex
+	filesMap := map[string]*jsonFileIndex{}
 
-	for _, filename := range allFilenames {
-		f := &jsonFileIndex{Name: filename}
+	index.Inspect(func(stats heatmap.LineStats) {
+		if stats.HeatLevel == 0 {
+			return
+		}
 
-		index.InspectFileLines(filename, func(stats heatmap.LineStats) {
-			if stats.HeatLevel == 0 {
-				return
-			}
+		f := filesMap[stats.Func.Filename]
+		if f == nil {
+			f = &jsonFileIndex{Name: stats.Func.Filename}
+			filesList = append(filesList, f)
+			filesMap[stats.Func.Filename] = f
+		}
 
-			value := int(stats.Value)
-			if valueMultiplier != 1.0 {
-				value = int(float64(value) * valueMultiplier)
-			}
-			if value == 0 {
-				return
-			}
-			f.Lines = append(f.Lines, jsonLine{
-				Num:             stats.LineNum,
-				HeatLevel:       stats.HeatLevel,
-				GlobalHeatLevel: stats.GlobalHeatLevel,
-				Value:           value,
-			})
+		value := int(stats.Value)
+		if valueMultiplier != 1.0 {
+			value = int(float64(value) * valueMultiplier)
+		}
+		if value == 0 {
+			return
+		}
+		f.Lines = append(f.Lines, jsonLine{
+			Num:             stats.LineNum,
+			HeatLevel:       stats.HeatLevel,
+			GlobalHeatLevel: stats.GlobalHeatLevel,
+			Value:           value,
 		})
+	})
 
-		result.Files = append(result.Files, f)
-	}
+	sort.Slice(filesList, func(i, j int) bool {
+		return filesList[i].Name < filesList[j].Name
+	})
+
+	result.Files = filesList
 
 	writeJSON(os.Stdout, result)
 

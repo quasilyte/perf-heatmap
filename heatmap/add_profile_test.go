@@ -3,8 +3,8 @@ package heatmap
 import (
 	"fmt"
 	"math/rand"
-	"path"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,32 +12,133 @@ import (
 	"github.com/google/pprof/profile"
 )
 
+func convertTestKey(s string) Key {
+	var key Key
+	parts := strings.Split(s, ":")
+	key.Filename = parts[0]
+	pkgName, typeName, funcName := parseFuncName(parts[1])
+	key.PkgName = pkgName
+	key.TypeName = typeName
+	key.FuncName = funcName
+	return key
+}
+
+func TestConvertTestKey(t *testing.T) {
+	tests := []struct {
+		s        string
+		filename string
+		pkgName  string
+		typeName string
+		funcName string
+	}{
+		{"file.go:pkg.f", "file.go", "pkg", "", "f"},
+		{"file.go:pkg.(T).f", "file.go", "pkg", "T", "f"},
+		{"file.go:pkg.(*T).f", "file.go", "pkg", "T", "f"},
+		{"foo/file.go:pkg.(*T).f", "foo/file.go", "pkg", "T", "f"},
+		{"/foo/file.go:pkg.(*T).f", "/foo/file.go", "pkg", "T", "f"},
+	}
+
+	for _, test := range tests {
+		k := convertTestKey(test.s)
+		if k.Filename != test.filename {
+			t.Fatalf("convertTestKey(%q) filename => have %s, want %s", test.s, k.Filename, test.pkgName)
+		}
+		if k.PkgName != test.pkgName {
+			t.Fatalf("convertTestKey(%q) pkgName => have %s, want %s", test.s, k.PkgName, test.pkgName)
+		}
+		if k.TypeName != test.typeName {
+			t.Fatalf("convertTestKey(%q) typeName => have %s, want %s", test.s, k.TypeName, test.typeName)
+		}
+		if k.FuncName != test.funcName {
+			t.Fatalf("convertTestKey(%q) funcName => have %s, want %s", test.s, k.FuncName, test.funcName)
+		}
+	}
+}
+
+func TestParseFuncName(t *testing.T) {
+	tests := []struct {
+		s        string
+		pkgName  string
+		typeName string
+		funcName string
+	}{
+		{"", "", "", ""},
+		{"indexbyte", "", "", "indexbyte"},
+		{"strings.SplitN", "strings", "", "SplitN"},
+		{"testing.(*B).launch", "testing", "B", "launch"},
+		{"a.(Example).b", "a", "Example", "b"},
+		{"a.(Example).b.func1.1", "a", "Example", "b.func1.1"},
+		{"runtime.gcBgMarkWorker.func2", "runtime", "", "gcBgMarkWorker.func2"},
+		{"runtime.gcMarkDone.func1.1", "runtime", "", "gcMarkDone.func1.1"},
+		{"github.com/quasilyte/gogrep.(*matcher).matchNodeWithInst", "gogrep", "matcher", "matchNodeWithInst"},
+		{"github.com/quasilyte/gogrep.(*matcher).matchNodeWithInst.func1", "gogrep", "matcher", "matchNodeWithInst.func1"},
+		{"github.com/quasilyte/gogrep.(*matcher).matchNodeWithInst.func1.1", "gogrep", "matcher", "matchNodeWithInst.func1.1"},
+		{"aaa/bbb.(CCC).fff.func1", "bbb", "CCC", "fff.func1"},
+		{"aaa/bbb.(*CCC).fff.func1", "bbb", "CCC", "fff.func1"},
+		{"/aaa/bbb.(*CCC).fff.func1", "bbb", "CCC", "fff.func1"},
+		{"aaa.com/bbb.ccc/ddd.(EEE).fff", "ddd", "EEE", "fff"},
+	}
+
+	for _, test := range tests {
+		pkgName, typeName, funcName := parseFuncName(test.s)
+		if pkgName != test.pkgName {
+			t.Fatalf("parseFuncName(%q) pkgName => have %s, want %s", test.s, pkgName, test.pkgName)
+		}
+		if typeName != test.typeName {
+			t.Fatalf("parseFuncName(%q) typeName => have %s, want %s", test.s, typeName, test.typeName)
+		}
+		if funcName != test.funcName {
+			t.Fatalf("parseFuncName(%q) funcName => have %s, want %s", test.s, funcName, test.funcName)
+		}
+	}
+}
+
 func TestAddProfile(t *testing.T) {
 	dumpIndex := func(index *Index) []string {
 		var lines []string
-		for _, filename := range index.CollectFilenames() {
-			currentFunc := ""
-			index.InspectFileLines(filename, func(s LineStats) {
-				if currentFunc != s.Func.Name {
-					currentFunc = s.Func.Name
-					lines = append(lines, fmt.Sprintf("func %s (L=%d G=%d)",
-						currentFunc, s.Func.MaxHeatLevel, s.Func.MaxGlobalHeatLevel))
-				}
-				l := fmt.Sprintf("%s:%d: V=%3d L=%d G=%d", filename, s.LineNum, s.Value, s.HeatLevel, s.GlobalHeatLevel)
+		sortedKeys := make([]Key, 0, len(index.funcIDByKey))
+		for key := range index.funcIDByKey {
+			sortedKeys = append(sortedKeys, key)
+		}
+		sort.Slice(sortedKeys, func(i, j int) bool {
+			x := sortedKeys[i]
+			y := sortedKeys[j]
+			if x.PkgName != y.PkgName {
+				return x.PkgName < y.PkgName
+			}
+			if x.Filename != y.Filename {
+				return x.Filename < y.Filename
+			}
+			if x.TypeName != y.TypeName {
+				return x.TypeName < y.TypeName
+			}
+			return x.FuncName < y.FuncName
+		})
+		for _, key := range sortedKeys {
+			funcID := index.funcIDByKey[key]
+			fn := &index.funcs[funcID]
+			lines = append(lines, fmt.Sprintf("func %s (L=%d G=%d)",
+				formatFuncName(key.PkgName, key.TypeName, key.FuncName), fn.maxLocalLevel, fn.maxGlobalLevel))
+			data := index.dataPoints[fn.dataFrom:fn.dataTo]
+			filename := index.filenames[fn.fileID]
+			for i := range data {
+				pt := &data[i]
+				l := fmt.Sprintf("%s:%d: V=%3d L=%d G=%d",
+					filename, pt.line, pt.value, pt.flags.GetLocalLevel(), pt.flags.GetGlobalLevel())
 				lines = append(lines, l)
-			})
+			}
 		}
 		return lines
 	}
 
 	type testQuery struct {
-		filename string
-		line     int
-		want     HeatLevel
+		key  string
+		line int
+		want HeatLevel
 	}
 
 	type testRangeQuery struct {
-		filename string
+		key      string
 		fromLine int
 		toLine   int
 		want     []HeatLevel
@@ -54,77 +155,66 @@ func TestAddProfile(t *testing.T) {
 	tests := []testCase{
 		{
 			buildProfile: newTestProfileBuilder().
-				AddSamples("buffer.go/example", 25, []int{10}).
-				AddSamples("buffer.go/example", 75, []int{10}).
+				AddSamples("buffer.go:example.f", 25, []int{10}).
+				AddSamples("buffer.go:example.f", 75, []int{10}).
 				Build,
 			config: IndexConfig{Threshold: 0.25},
 			want: []string{
-				"func example (L=5 G=5)",
+				"func example.f (L=5 G=5)",
 				"buffer.go:10: V=100 L=5 G=5",
 			},
 		},
 
 		{
 			buildProfile: newTestProfileBuilder().
-				AddSamples("buffer.go/example",
+				AddSamples("buffer.go:example.f",
 					25, []int{10},
 					75, []int{10}).
 				Build,
 			config: IndexConfig{Threshold: 0.25},
 			want: []string{
-				"func example (L=5 G=5)",
+				"func example.f (L=5 G=5)",
 				"buffer.go:10: V=100 L=5 G=5",
 			},
 		},
 
 		{
 			buildProfile: newTestProfileBuilder().
-				AddSamples("/home/gopher/buffer.go/example",
-					75, []int{10}).
-				Build,
-			config: IndexConfig{
-				TrimPrefix: "/home/gopher/",
-				Threshold:  0.25,
-			},
-			want: []string{
-				"func example (L=5 G=5)",
-				"buffer.go:10: V= 75 L=5 G=5",
-			},
-			queries: []testQuery{
-				{"buffer.go", 10, HeatLevel{5, 5}},
-				{"/home/gopher/buffer.go", 10, HeatLevel{}},
-				{"/home/gopher/buffer.go", 9, HeatLevel{}},
-				{"/home/gopher/buffer2.go", 10, HeatLevel{}},
-			},
-		},
-
-		{
-			buildProfile: newTestProfileBuilder().
-				AddSamples("/home/gopher/buffer.go/example",
+				AddSamples("/home/gopher/buffer.go:example.fn",
 					75, []int{10}).
 				Build,
 			config: IndexConfig{Threshold: 0.25},
 			want: []string{
-				"func example (L=5 G=5)",
+				"func example.fn (L=5 G=5)",
 				"/home/gopher/buffer.go:10: V= 75 L=5 G=5",
 			},
 			queries: []testQuery{
-				{"/home/gopher/buffer.go", 10, HeatLevel{5, 5}},
-				{"buffer.go", 10, HeatLevel{}},
-				{"/home/gopher/buffer.go", 9, HeatLevel{}},
-				{"/home/gopher/buffer2.go", 10, HeatLevel{}},
+				{"buffer.go:example.fn", 10, HeatLevel{5, 5}},
+
+				// Query using the invalid func name.
+				{"buffer.go:example2.fn", 10, HeatLevel{}},
+				// Query at the invalid line.
+				{"buffer.go:example.fn", 9, HeatLevel{}},
+				// Query using the invalid filename.
+				{"buffer2.go:example.fn", 10, HeatLevel{}},
+			},
+			rangeQueries: []testRangeQuery{
+				{"buffer.go:example.fn", 9, 11, []HeatLevel{{5, 5}}},
+				{"buffer.go:example.fn", 6, 10, []HeatLevel{{5, 5}}},
+				{"buffer.go:example.fn", 6, 9, []HeatLevel{}},
+				{"buffer.go:example.fn", 15, 20, []HeatLevel{}},
 			},
 		},
 
 		{
 			buildProfile: newTestProfileBuilder().
-				AddSamples("buffer.go/example",
+				AddSamples("buffer.go:pkg.example",
 					75, []int{11, 12},
 					25, []int{10}).
 				Build,
 			config: IndexConfig{Threshold: 0.25},
 			want: []string{
-				"func example (L=5 G=5)",
+				"func pkg.example (L=5 G=5)",
 				"buffer.go:10: V= 25 L=0 G=0",
 				"buffer.go:11: V= 75 L=0 G=0",
 				"buffer.go:12: V= 75 L=5 G=5",
@@ -133,7 +223,7 @@ func TestAddProfile(t *testing.T) {
 
 		{
 			buildProfile: newTestProfileBuilder().
-				AddSamples("buffer.go/example",
+				AddSamples("buffer.go:example.fff",
 					10, []int{5},
 					11, []int{4},
 					12, []int{3},
@@ -142,7 +232,7 @@ func TestAddProfile(t *testing.T) {
 				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
-				"func example (L=5 G=5)",
+				"func example.fff (L=5 G=5)",
 				"buffer.go:1: V= 14 L=5 G=5",
 				"buffer.go:2: V= 13 L=4 G=4",
 				"buffer.go:3: V= 12 L=3 G=3",
@@ -153,7 +243,7 @@ func TestAddProfile(t *testing.T) {
 
 		{
 			buildProfile: newTestProfileBuilder().
-				AddSamples("buffer.go/example",
+				AddSamples("buffer.go:example.example",
 					10, []int{5},
 					11, []int{4},
 					12, []int{3},
@@ -162,7 +252,7 @@ func TestAddProfile(t *testing.T) {
 				Build,
 			config: IndexConfig{Threshold: 0.6},
 			want: []string{
-				"func example (L=5 G=5)",
+				"func example.example (L=5 G=5)",
 				"buffer.go:1: V= 14 L=5 G=5",
 				"buffer.go:2: V= 13 L=4 G=4",
 				"buffer.go:3: V= 12 L=3 G=3",
@@ -173,16 +263,56 @@ func TestAddProfile(t *testing.T) {
 
 		{
 			buildProfile: newTestProfileBuilder().
-				AddSamples("a.go/f2",
+				AddSamples("buffer.go:example.example",
+					10, []int{5},
+					11, []int{4},
+					12, []int{3},
+					13, []int{2},
+					14, []int{1}).
+				Build,
+			config: IndexConfig{Threshold: 0.1},
+			want: []string{
+				"func example.example (L=5 G=5)",
+				"buffer.go:1: V= 14 L=5 G=5",
+				"buffer.go:2: V= 13 L=0 G=0",
+				"buffer.go:3: V= 12 L=0 G=0",
+				"buffer.go:4: V= 11 L=0 G=0",
+				"buffer.go:5: V= 10 L=0 G=0",
+			},
+		},
+
+		{
+			buildProfile: newTestProfileBuilder().
+				AddSamples("buffer.go:example.example",
+					10, []int{5},
+					11, []int{4},
+					12, []int{3},
+					13, []int{2},
+					14, []int{1}).
+				Build,
+			config: IndexConfig{Threshold: 0.01},
+			want: []string{
+				"func example.example (L=5 G=5)",
+				"buffer.go:1: V= 14 L=5 G=5",
+				"buffer.go:2: V= 13 L=0 G=0",
+				"buffer.go:3: V= 12 L=0 G=0",
+				"buffer.go:4: V= 11 L=0 G=0",
+				"buffer.go:5: V= 10 L=0 G=0",
+			},
+		},
+
+		{
+			buildProfile: newTestProfileBuilder().
+				AddSamples("a.go:pkg1.(*T).f2",
 					100, []int{1, 2, 3},
 					50, []int{2, 3},
 					25, []int{3}).
-				AddSamples("a.go/f1",
+				AddSamples("a.go:pkg1.(*T).f1",
 					150, []int{6},
 					160, []int{6},
 					80, []int{10},
 					40, []int{11}).
-				AddSamples("b.go/f",
+				AddSamples("b.go:pkg2.f",
 					40, []int{5, 6},
 					40, []int{5, 6},
 					40, []int{5, 6},
@@ -191,17 +321,17 @@ func TestAddProfile(t *testing.T) {
 				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
-				"func f2 (L=4 G=3)",
-				"a.go:1: V=100 L=2 G=2",
-				"a.go:2: V=150 L=3 G=2",
-				"a.go:3: V=175 L=4 G=3",
-
-				"func f1 (L=5 G=5)",
+				"func pkg1.(T).f1 (L=5 G=5)",
 				"a.go:6: V=310 L=5 G=5",
-				"a.go:10: V= 80 L=1 G=1",
-				"a.go:11: V= 40 L=1 G=1",
+				"a.go:10: V= 80 L=4 G=1",
+				"a.go:11: V= 40 L=3 G=1",
 
-				"func f (L=5 G=4)",
+				"func pkg1.(T).f2 (L=5 G=3)",
+				"a.go:1: V=100 L=3 G=2",
+				"a.go:2: V=150 L=4 G=2",
+				"a.go:3: V=175 L=5 G=3",
+
+				"func pkg2.f (L=5 G=4)",
 				"b.go:5: V=200 L=4 G=4",
 				"b.go:6: V=200 L=5 G=4",
 			},
@@ -209,17 +339,17 @@ func TestAddProfile(t *testing.T) {
 
 		{
 			buildProfile: newTestProfileBuilder().
-				AddSamples("a.go/f1",
+				AddSamples("a.go:pkg.f1",
 					100, []int{1, 2, 3},
 					50, []int{2, 3},
 					25, []int{3},
 					500, []int{4}).
-				AddSamples("a.go/f2",
+				AddSamples("a.go:pkg.f2",
 					150, []int{6},
 					160, []int{6},
 					80, []int{10},
 					40, []int{11}).
-				AddSamples("b.go/f",
+				AddSamples("b.go:pkg.f",
 					40, []int{5, 6},
 					40, []int{5, 6},
 					40, []int{5, 6},
@@ -228,18 +358,18 @@ func TestAddProfile(t *testing.T) {
 				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
-				"func f1 (L=5 G=5)",
+				"func pkg.f1 (L=5 G=5)",
 				"a.go:1: V=100 L=2 G=2",
 				"a.go:2: V=150 L=3 G=2",
-				"a.go:3: V=175 L=3 G=3",
+				"a.go:3: V=175 L=4 G=3",
 				"a.go:4: V=500 L=5 G=5",
 
-				"func f2 (L=4 G=4)",
-				"a.go:6: V=310 L=4 G=4",
-				"a.go:10: V= 80 L=1 G=1",
-				"a.go:11: V= 40 L=1 G=1",
+				"func pkg.f2 (L=5 G=4)",
+				"a.go:6: V=310 L=5 G=4",
+				"a.go:10: V= 80 L=4 G=1",
+				"a.go:11: V= 40 L=3 G=1",
 
-				"func f (L=5 G=4)",
+				"func pkg.f (L=5 G=4)",
 				"b.go:5: V=200 L=4 G=3",
 				"b.go:6: V=200 L=5 G=4",
 			},
@@ -247,12 +377,12 @@ func TestAddProfile(t *testing.T) {
 
 		{
 			buildProfile: newTestProfileBuilder().
-				AddSamples("a.go/f1",
+				AddSamples("a.go:example.f1",
 					100, []int{1, 2, 3},
 					50, []int{2, 3},
 					25, []int{3},
 					500, []int{4}).
-				AddSamples("a.go/f2",
+				AddSamples("a.go:example.f2",
 					150, []int{6},
 					160, []int{6},
 					80, []int{10},
@@ -265,57 +395,60 @@ func TestAddProfile(t *testing.T) {
 					160, []int{19},
 					80, []int{24},
 					40, []int{28}).
-				AddSamples("b.go/f",
+				AddSamples("b.go:example.f",
 					40, []int{5, 6},
 					40, []int{5, 7},
 					40, []int{5, 7},
 					40, []int{5, 6},
 					40, []int{5, 6}).
-				AddSamples("c.go/f",
+				AddSamples("c.go:example.f",
 					1, []int{1},
 					2, []int{1},
 					3, []int{1}).
 				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
-				"func f1 (L=5 G=5)",
+				"func example.f1 (L=5 G=5)",
 				"a.go:1: V=100 L=2 G=2",
 				"a.go:2: V=150 L=3 G=3",
 				"a.go:3: V=175 L=4 G=4",
 				"a.go:4: V=500 L=5 G=5",
-				"func f2 (L=5 G=5)",
+
+				"func example.f2 (L=5 G=5)",
 				"a.go:6: V=310 L=5 G=5",
-				"a.go:10: V= 80 L=1 G=2",
+				"a.go:10: V= 80 L=2 G=2",
 				"a.go:11: V= 40 L=1 G=1",
 				"a.go:14: V=150 L=3 G=3",
 				"a.go:15: V=160 L=4 G=4",
-				"a.go:16: V=120 L=2 G=3",
-				"a.go:17: V=150 L=3 G=4",
-				"a.go:19: V=160 L=4 G=4",
+				"a.go:16: V=120 L=3 G=3",
+				"a.go:17: V=150 L=4 G=4",
+				"a.go:19: V=160 L=5 G=4",
 				"a.go:24: V= 80 L=2 G=2",
 				"a.go:28: V= 40 L=1 G=1",
-				"func f (L=5 G=5)",
+
+				"func example.f (L=5 G=5)",
 				"b.go:5: V=200 L=5 G=5",
 				"b.go:6: V=120 L=4 G=2",
 				"b.go:7: V= 80 L=3 G=1",
-				"func f (L=5 G=1)",
+
+				"func example.f (L=5 G=1)",
 				"c.go:1: V=  6 L=5 G=1",
 			},
 		},
 
 		{
 			buildProfile: newTestProfileBuilder().
-				AddSamples("a.go/f1",
+				AddSamples("a.go:test.f1.func1",
 					100, []int{1, 2, 3},
 					50, []int{2, 3},
 					25, []int{3},
 					500, []int{4}).
-				AddSamples("a.go/f2",
+				AddSamples("a.go:test.f1.func2",
 					150, []int{6},
 					200, []int{6},
 					80, []int{10},
 					40, []int{11}).
-				AddSamples("b.go/f",
+				AddSamples("b.go:test.f",
 					40, []int{5, 6},
 					40, []int{5, 6},
 					40, []int{5, 6},
@@ -326,18 +459,18 @@ func TestAddProfile(t *testing.T) {
 				Build,
 			config: IndexConfig{Threshold: 0.5},
 			want: []string{
-				"func f1 (L=5 G=5)",
+				"func test.f1.func1 (L=5 G=5)",
 				"a.go:1: V=100 L=0 G=0",
 				"a.go:2: V=150 L=0 G=0",
-				"a.go:3: V=175 L=3 G=0",
+				"a.go:3: V=175 L=4 G=0",
 				"a.go:4: V=500 L=5 G=5",
 
-				"func f2 (L=4 G=4)",
-				"a.go:6: V=350 L=4 G=4",
+				"func test.f1.func2 (L=5 G=4)",
+				"a.go:6: V=350 L=5 G=4",
 				"a.go:10: V= 80 L=0 G=0",
 				"a.go:11: V= 40 L=0 G=0",
 
-				"func f (L=5 G=3)",
+				"func test.f (L=5 G=3)",
 				"b.go:5: V=345 L=0 G=2",
 				"b.go:6: V=345 L=5 G=3",
 				"b.go:7: V=185 L=0 G=1",
@@ -346,98 +479,134 @@ func TestAddProfile(t *testing.T) {
 
 		{
 			buildProfile: newTestProfileBuilder().
-				AddSamples("a.go/f1", 109, []int{1}).
-				AddSamples("a.go/f2", 108, []int{2}).
-				AddSamples("a.go/f3", 107, []int{3}).
-				AddSamples("a.go/f4", 106, []int{4}).
-				AddSamples("a.go/f5", 105, []int{5}).
-				AddSamples("a.go/f6", 104, []int{6}).
-				AddSamples("a.go/f7", 103, []int{7}).
-				AddSamples("a.go/f8", 102, []int{8}).
-				AddSamples("a.go/f9", 101, []int{9}).
+				AddSamples("a.go:test.f1", 109, []int{1}).
+				AddSamples("a.go:test.f2", 108, []int{2}).
+				AddSamples("a.go:test.f3", 107, []int{3}).
+				AddSamples("a.go:test.f4", 106, []int{4}).
+				AddSamples("a.go:test.f5", 105, []int{5}).
+				AddSamples("a.go:test.f6", 104, []int{6}).
+				AddSamples("a.go:test.f7", 103, []int{7}).
+				AddSamples("a.go:test.f8", 102, []int{8}).
+				AddSamples("a.go:test.f9", 101, []int{9}).
 				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
-				"func f1 (L=5 G=5)",
+				"func test.f1 (L=5 G=5)",
 				"a.go:1: V=109 L=5 G=5",
-				"func f2 (L=4 G=4)",
-				"a.go:2: V=108 L=4 G=4",
-				"func f3 (L=4 G=4)",
-				"a.go:3: V=107 L=4 G=4",
-				"func f4 (L=3 G=3)",
-				"a.go:4: V=106 L=3 G=3",
-				"func f5 (L=3 G=3)",
-				"a.go:5: V=105 L=3 G=3",
-				"func f6 (L=2 G=2)",
-				"a.go:6: V=104 L=2 G=2",
-				"func f7 (L=2 G=2)",
-				"a.go:7: V=103 L=2 G=2",
-				"func f8 (L=1 G=1)",
-				"a.go:8: V=102 L=1 G=1",
-				"func f9 (L=1 G=1)",
-				"a.go:9: V=101 L=1 G=1",
+				"func test.f2 (L=5 G=4)",
+				"a.go:2: V=108 L=5 G=4",
+				"func test.f3 (L=5 G=4)",
+				"a.go:3: V=107 L=5 G=4",
+				"func test.f4 (L=5 G=3)",
+				"a.go:4: V=106 L=5 G=3",
+				"func test.f5 (L=5 G=3)",
+				"a.go:5: V=105 L=5 G=3",
+				"func test.f6 (L=5 G=2)",
+				"a.go:6: V=104 L=5 G=2",
+				"func test.f7 (L=5 G=2)",
+				"a.go:7: V=103 L=5 G=2",
+				"func test.f8 (L=5 G=1)",
+				"a.go:8: V=102 L=5 G=1",
+				"func test.f9 (L=5 G=1)",
+				"a.go:9: V=101 L=5 G=1",
 			},
 		},
 
-		// All samples would point to the same line, resulting in a single data point.
+		// All samples would point to the same func+line, resulting in a single data point.
 		{
 			buildProfile: newTestProfileBuilder().
 				Sorted().
-				AddSamples("a.go/f1", 109, []int{1}).
-				AddSamples("a.go/f2", 108, []int{1}).
-				AddSamples("a.go/f4", 106, []int{1}).
-				AddSamples("a.go/f3", 107, []int{1}).
-				AddSamples("a.go/f6", 104, []int{1}).
-				AddSamples("a.go/f9", 101, []int{1}).
-				AddSamples("a.go/f5", 105, []int{1}).
-				AddSamples("a.go/f8", 102, []int{1}).
-				AddSamples("a.go/f7", 103, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f", 109, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f", 108, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f", 106, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f", 107, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f", 104, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f", 101, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f", 105, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f", 102, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f", 103, []int{1}).
 				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
-				"func f1 (L=5 G=5)",
-				"a.go:1: V=945 L=5 G=5",
+				"func test.f (L=5 G=5)",
+				"/foo/go/src/a.go:1: V=945 L=5 G=5",
 			},
 		},
 
 		{
 			buildProfile: newTestProfileBuilder().
-				AddSamples("a.go/f1", 109, []int{5}).
-				AddSamples("a.go/f2", 108, []int{6}).
-				AddSamples("a.go/f3", 107, []int{7}).
-				AddSamples("a.go/f4", 106, []int{1}).
-				AddSamples("a.go/f5", 105, []int{2}).
-				AddSamples("a.go/f6", 104, []int{3}).
-				AddSamples("a.go/f7", 103, []int{4}).
-				AddSamples("a.go/f8", 102, []int{8}).
-				AddSamples("a.go/f9", 101, []int{9}).
+				Sorted().
+				AddSamples("/foo/go/src/a.go:test.f1", 109, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f2", 108, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f3", 106, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f4", 107, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f5", 104, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f6", 101, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f7", 105, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f8", 102, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f9", 103, []int{1}).
 				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
-				"func f4 (L=3 G=3)",
-				"a.go:1: V=106 L=3 G=3",
-				"func f5 (L=3 G=3)",
-				"a.go:2: V=105 L=3 G=3",
-				"func f6 (L=2 G=2)",
-				"a.go:3: V=104 L=2 G=2",
-				"func f7 (L=2 G=2)",
-				"a.go:4: V=103 L=2 G=2",
-				"func f1 (L=5 G=5)",
+				"func test.f1 (L=5 G=5)",
+				"/foo/go/src/a.go:1: V=109 L=5 G=5",
+				"func test.f2 (L=5 G=4)",
+				"/foo/go/src/a.go:1: V=108 L=5 G=4",
+				"func test.f3 (L=5 G=3)",
+				"/foo/go/src/a.go:1: V=106 L=5 G=3",
+				"func test.f4 (L=5 G=4)",
+				"/foo/go/src/a.go:1: V=107 L=5 G=4",
+				"func test.f5 (L=5 G=2)",
+				"/foo/go/src/a.go:1: V=104 L=5 G=2",
+				"func test.f6 (L=5 G=1)",
+				"/foo/go/src/a.go:1: V=101 L=5 G=1",
+				"func test.f7 (L=5 G=3)",
+				"/foo/go/src/a.go:1: V=105 L=5 G=3",
+				"func test.f8 (L=5 G=1)",
+				"/foo/go/src/a.go:1: V=102 L=5 G=1",
+				"func test.f9 (L=5 G=2)",
+				"/foo/go/src/a.go:1: V=103 L=5 G=2",
+			},
+		},
+
+		{
+			buildProfile: newTestProfileBuilder().
+				AddSamples("a.go:x.(Example).f1", 109, []int{5}).
+				AddSamples("a.go:x.(Example).f2", 108, []int{6}).
+				AddSamples("a.go:x.(Example).f3", 107, []int{7}).
+				AddSamples("a.go:x.(Example).f4", 106, []int{1}).
+				AddSamples("a.go:x.(Example).f5", 105, []int{2}).
+				AddSamples("a.go:x.(Example).f6", 104, []int{3}).
+				AddSamples("a.go:x.(Example).f7", 103, []int{4}).
+				AddSamples("a.go:x.(Example).f8", 102, []int{8}).
+				AddSamples("a.go:x.(Example).f9", 101, []int{9}).
+				Build,
+			config: IndexConfig{Threshold: 1},
+			want: []string{
+				"func x.(Example).f1 (L=5 G=5)",
 				"a.go:5: V=109 L=5 G=5",
-				"func f2 (L=4 G=4)",
-				"a.go:6: V=108 L=4 G=4",
-				"func f3 (L=4 G=4)",
-				"a.go:7: V=107 L=4 G=4",
-				"func f8 (L=1 G=1)",
-				"a.go:8: V=102 L=1 G=1",
-				"func f9 (L=1 G=1)",
-				"a.go:9: V=101 L=1 G=1",
+				"func x.(Example).f2 (L=5 G=4)",
+				"a.go:6: V=108 L=5 G=4",
+				"func x.(Example).f3 (L=5 G=4)",
+				"a.go:7: V=107 L=5 G=4",
+				"func x.(Example).f4 (L=5 G=3)",
+				"a.go:1: V=106 L=5 G=3",
+				"func x.(Example).f5 (L=5 G=3)",
+				"a.go:2: V=105 L=5 G=3",
+				"func x.(Example).f6 (L=5 G=2)",
+				"a.go:3: V=104 L=5 G=2",
+				"func x.(Example).f7 (L=5 G=2)",
+				"a.go:4: V=103 L=5 G=2",
+				"func x.(Example).f8 (L=5 G=1)",
+				"a.go:8: V=102 L=5 G=1",
+				"func x.(Example).f9 (L=5 G=1)",
+				"a.go:9: V=101 L=5 G=1",
 			},
 		},
 
 		{
 			buildProfile: newTestProfileBuilder().
-				AddSamples("file.go/testfunc",
+				AddSamples("file.go:example.testfunc",
 					100, []int{207},
 					100, []int{500, 305},
 					100, []int{207},
@@ -539,7 +708,7 @@ func TestAddProfile(t *testing.T) {
 				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
-				"func testfunc (L=5 G=5)",
+				"func example.testfunc (L=5 G=5)",
 				"file.go:100: V=1280 L=3 G=3",
 				"file.go:200: V=1280 L=3 G=3",
 				"file.go:201: V=640 L=1 G=1",
@@ -550,73 +719,63 @@ func TestAddProfile(t *testing.T) {
 			},
 			rangeQueries: []testRangeQuery{
 				{
-					filename: "file.go",
+					key:      "file.go:example.testfunc",
 					fromLine: 110,
 					toLine:   150,
 					want:     []HeatLevel{},
 				},
-				// {
-				// 	filename: "file.go",
-				// 	fromLine: 195,
-				// 	toLine:   205,
-				// 	want: []HeatLevel{
-				// 		{3, 3},
-				// 		{1, 1},
-				// 		{4, 4},
-				// 	},
-				// },
-				// {
-				// 	filename: "file.go",
-				// 	fromLine: 200,
-				// 	toLine:   205,
-				// 	want: []HeatLevel{
-				// 		{3, 3},
-				// 		{1, 1},
-				// 		{4, 4},
-				// 	},
-				// },
-				// {
-				// 	filename: "file.go",
-				// 	fromLine: 202,
-				// 	toLine:   205,
-				// 	want: []HeatLevel{
-				// 		{4, 4},
-				// 	},
-				// },
+				{
+					key:      "file.go:example.testfunc",
+					fromLine: 195,
+					toLine:   205,
+					want: []HeatLevel{
+						{3, 3},
+						{1, 1},
+						{4, 4},
+					},
+				},
+				{
+					key:      "file.go:example.testfunc",
+					fromLine: 200,
+					toLine:   205,
+					want: []HeatLevel{
+						{3, 3},
+						{1, 1},
+						{4, 4},
+					},
+				},
+				{
+					key:      "file.go:example.testfunc",
+					fromLine: 202,
+					toLine:   205,
+					want: []HeatLevel{
+						{4, 4},
+					},
+				},
 			},
 		},
 	}
 
 	validateIndex := func(t *testing.T, index *Index) {
-		for filename, f := range index.byFilename {
-			if !index.HasFile(filename) {
-				t.Fatalf("!HasFile(%s)", filename)
+		if !sort.IsSorted(sort.StringSlice(index.filenames)) {
+			t.Fatal("filenames are not sorted correctly")
+		}
 
-			}
-			funcnames := make([]string, 0, len(f.funcs))
-			for _, fn := range f.funcs {
-				funcnames = append(funcnames, fn.name)
-				haveValues := index.QueryFunc(filename, fn.name)
-				wantValues := HeatLevel{Local: int(fn.maxLocalLevel), Global: int(fn.maxGlobalLevel)}
-				if haveValues != wantValues {
-					t.Fatalf("QueryFunc(%s, %s): invalid heat values", filename, fn.name)
-				}
-			}
-			if !sort.IsSorted(sort.StringSlice(funcnames)) {
-				t.Fatalf("%s funcs are not sorted correctly", filename)
-			}
-			data := index.dataPoints[f.dataFrom:f.dataTo]
+		for key, funcID := range index.funcIDByKey {
+			fn := index.funcs[funcID]
+			filename := index.filenames[fn.fileID]
+			data := index.dataPoints[fn.dataFrom:fn.dataTo]
 			linesSlice := make([]int, 0, len(data))
 			for _, pt := range data {
 				linesSlice = append(linesSlice, int(pt.line))
-				haveValues := index.QueryLine(filename, int(pt.line))
+				haveValues := index.QueryLine(key, int(pt.line))
 				wantValues := HeatLevel{Local: pt.flags.GetLocalLevel(), Global: pt.flags.GetGlobalLevel()}
 				if haveValues != wantValues {
 					t.Fatalf("QueryLine(%s, %d): invalid heat values\nhave: %#v\nwant: %#v",
 						filename, pt.line, haveValues, wantValues)
 				}
 				var haveValues2 HeatLevel
-				index.queryLineRange(filename, int(pt.line), int(pt.line), func(line int, l HeatLevel) bool {
+				index.queryLineRange(key, int(pt.line), int(pt.line), func(line int, l HeatLevel) bool {
 					haveValues2 = l
 					if line != int(pt.line) {
 						t.Fatalf("incorrect line from the queryLineRange()")
@@ -628,7 +787,7 @@ func TestAddProfile(t *testing.T) {
 						filename, pt.line, pt.line, haveValues2, wantValues)
 				}
 				var haveValues3 HeatLevel
-				index.queryLineRange(filename, int(pt.line), int(pt.line), func(line int, l HeatLevel) bool {
+				index.queryLineRange(key, int(pt.line), int(pt.line), func(line int, l HeatLevel) bool {
 					haveValues3 = l
 					return true
 				})
@@ -637,16 +796,16 @@ func TestAddProfile(t *testing.T) {
 						filename, pt.line, pt.line, haveValues3, wantValues)
 				}
 				haveTotal := 0
-				index.queryLineRange(filename, 1, int(f.maxLine), func(line int, l HeatLevel) bool {
+				index.queryLineRange(key, 1, int(fn.maxLine), func(line int, l HeatLevel) bool {
 					haveTotal++
 					return true
 				})
-				if haveTotal != f.NumPoints() {
+				if haveTotal != fn.NumPoints() {
 					t.Fatalf("queryLineRange(%s, 1, %d): results number mismatch\nhave: %v\nwant: %v",
-						filename, int(f.maxLine), haveTotal, f.NumPoints())
+						filename, int(fn.maxLine), haveTotal, fn.NumPoints())
 				}
 			}
-			if f.minLine > f.maxLine {
+			if fn.minLine > fn.maxLine {
 				t.Fatalf("%s minLine > maxLine", filename)
 			}
 			if !sort.IsSorted(sort.IntSlice(linesSlice)) {
@@ -670,21 +829,21 @@ func TestAddProfile(t *testing.T) {
 				t.Errorf("results mismatch:\n(+want -have)\n%s", diff)
 			}
 			for _, q := range test.queries {
-				have := index.QueryLine(q.filename, q.line)
+				have := index.QueryLine(convertTestKey(q.key), q.line)
 				want := q.want
 				if diff := cmp.Diff(have, want); diff != "" {
-					t.Errorf("QueryLine(%q, %d) results:\n(+want -have)\n%s", q.filename, q.line, diff)
+					t.Errorf("QueryLine(%q, %d) results:\n(+want -have)\n%s", q.key, q.line, diff)
 				}
 			}
 			for _, q := range test.rangeQueries {
 				have := []HeatLevel{}
-				index.queryLineRange(q.filename, q.fromLine, q.toLine, func(line int, l HeatLevel) bool {
+				index.queryLineRange(convertTestKey(q.key), q.fromLine, q.toLine, func(line int, l HeatLevel) bool {
 					have = append(have, l)
 					return true
 				})
 				want := q.want
 				if diff := cmp.Diff(have, want); diff != "" {
-					t.Errorf("QueryLineRange(%q, %d, %d) results:\n(+want -have)\n%s", q.filename, q.fromLine, q.toLine, diff)
+					t.Errorf("QueryLineRange(%q, %d, %d) results:\n(+want -have)\n%s", q.key, q.fromLine, q.toLine, diff)
 				}
 			}
 		})
@@ -744,7 +903,7 @@ func (b *testProfileBuilder) Build() *profile.Profile {
 		},
 	}
 
-	funcs := map[string]*profile.Function{}
+	funcs := map[Key]*profile.Function{}
 	newSample := func() *profile.Sample {
 		return &profile.Sample{
 			Location: []*profile.Location{
@@ -752,24 +911,22 @@ func (b *testProfileBuilder) Build() *profile.Profile {
 			},
 		}
 	}
-	getFunction := func(filename, funcName string) *profile.Function {
-		k := filename + "/" + funcName
-		f, ok := funcs[k]
+	getFunction := func(key Key) *profile.Function {
+		f, ok := funcs[key]
 		if !ok {
 			f = &profile.Function{
-				Name:     funcName,
-				Filename: filename,
+				Name:     formatFuncName(key.PkgName, key.TypeName, key.FuncName),
+				Filename: key.Filename,
 			}
-			funcs[k] = f
+			funcs[key] = f
 		}
 		return f
 	}
 
 	var outSamples []*profile.Sample
 	for sym, symSampleSet := range b.samples {
-		funcName := path.Base(sym)
-		filename := path.Dir(sym)
-		f := getFunction(filename, funcName)
+		key := convertTestKey(sym)
+		f := getFunction(key)
 
 		for _, s := range symSampleSet {
 			pprofSample := newSample()

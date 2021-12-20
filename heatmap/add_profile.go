@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -18,17 +19,46 @@ func addProfile(index *Index, p *profile.Profile) error {
 	return w.Walk()
 }
 
+func parseFuncName(s string) (pkgName, typeName, funcName string) {
+	lastSlash := strings.LastIndexByte(s, '/')
+	if lastSlash != -1 {
+		s = s[lastSlash+len("/"):]
+	}
+
+	i := strings.IndexByte(s, '.')
+	if i == -1 {
+		return "", "", s
+	}
+	resultPkgName := s[:i]
+	rest := s[i+1:]
+	if strings.HasPrefix(rest, "(") {
+		offset := 1
+		if strings.HasPrefix(rest, "(*") {
+			offset++
+		}
+		rparen := strings.IndexByte(rest, ')')
+		if rparen == -1 {
+			return "", "", ""
+		}
+		resultTypeName := rest[offset:rparen]
+		resultFuncName := rest[rparen+len(")."):]
+		return resultPkgName, resultTypeName, resultFuncName
+	}
+	return resultPkgName, "", rest
+}
+
 type profileWalker struct {
 	index *Index
 	p     *profile.Profile
 }
 
 func (w *profileWalker) Walk() error {
-	// TODO: implement profiles merging.
-	if w.index.byFilename != nil {
+	// TODO: implement profiles merging?
+	if w.index.funcIDByKey != nil {
 		return errors.New("unimplemented yet: adding several profiles")
 	}
 
+	// TODO: support other kinds of profiles, like heap allocs?
 	if len(w.p.SampleType) != 2 {
 		return errors.New("unexpected profile type")
 	}
@@ -39,55 +69,66 @@ func (w *profileWalker) Walk() error {
 		return fmt.Errorf("can't handle %s/%s samples yet", w.p.SampleType[1].Type, w.p.SampleType[1].Unit)
 	}
 
-	// Pass 1: aggregate the samples, build intermediate mappings.
+	pointGreater := func(x, y dataPoint) bool {
+		if x.value > y.value {
+			return true
+		}
+		if x.value < y.value {
+			return false
+		}
+		return x.line > y.line
+	}
+
+	type funcIndexTemplate struct {
+		funcIndex
+		origFilename string
+		key          Key
+		dataByLine   map[int64]dataPoint
+	}
+
+	// Step 1: aggregate the samples, build intermediate mappings.
 	numDataPoints := uint64(0)
-	m := map[string]*fileIndex{}
-	fileValues := map[*fileIndex]map[int64]*dataPoint{}
-	fileFuncs := map[*fileIndex]map[string]*funcDataPoint{}
+	filenameSet := map[string]uint32{}
+	m := map[Key]*funcIndexTemplate{}
 	for _, s := range w.p.Sample {
 		sampleValue := s.Value[1]
 		for _, loc := range s.Location {
 			for _, l := range loc.Line {
-				filename := strings.TrimPrefix(l.Function.Filename, w.index.config.TrimPrefix)
+				pkgName, typeName, funcName := parseFuncName(l.Function.Name)
+				if pkgName == "" {
+					continue
+				}
 				lineNum := l.Line
-				f := m[filename]
-				if f == nil {
-					f = &fileIndex{
-						minLine: math.MaxUint32,
-					}
-					m[filename] = f
-				}
-				fileFuncByName := fileFuncs[f]
-				if fileFuncByName == nil {
-					fileFuncByName = map[string]*funcDataPoint{}
-					fileFuncs[f] = fileFuncByName
-				}
-				fn := fileFuncByName[l.Function.Name]
-				if fn == nil {
-					fn = &funcDataPoint{
-						id:   uint16(len(fileFuncByName)),
-						name: l.Function.Name,
-					}
-					fileFuncByName[l.Function.Name] = fn
-				}
-				fileValueByLine := fileValues[f]
-				if fileValueByLine == nil {
-					fileValueByLine = map[int64]*dataPoint{}
-					fileValues[f] = fileValueByLine
-				}
-				pt := fileValueByLine[lineNum]
 				if lineNum > math.MaxUint32 {
 					continue
 				}
-				if pt == nil {
-					numDataPoints++
-					pt = &dataPoint{
-						line:      uint32(lineNum),
-						funcIndex: fn.id,
+				origFilename := l.Function.Filename
+				filenameSet[origFilename] = 0 // Will be set to an actual index later
+				key := Key{
+					TypeName: typeName,
+					FuncName: funcName,
+					PkgName:  pkgName,
+					Filename: filepath.Base(origFilename),
+				}
+				fn := m[key]
+				if fn == nil {
+					fn = &funcIndexTemplate{
+						funcIndex: funcIndex{
+							minLine: math.MaxUint32,
+						},
+						key:          key,
+						origFilename: origFilename,
+						dataByLine:   map[int64]dataPoint{},
 					}
-					fileValueByLine[lineNum] = pt
+					m[key] = fn
+				}
+				pt, ok := fn.dataByLine[lineNum]
+				if !ok {
+					numDataPoints++
+					pt.line = uint32(lineNum)
 				}
 				pt.value += sampleValue
+				fn.dataByLine[lineNum] = pt
 			}
 		}
 	}
@@ -99,35 +140,77 @@ func (w *profileWalker) Walk() error {
 		return fmt.Errorf("too many samples (%d)", numDataPoints)
 	}
 
-	// Pass 2: put all aggregated points into one slice, bind data ranges to files.
+	// Step 2: sort all filenames.
+	sortedFilenames := make([]string, 0, len(filenameSet))
+	for filename := range filenameSet {
+		sortedFilenames = append(sortedFilenames, filename)
+	}
+	sort.Strings(sortedFilenames)
+	for i, filename := range sortedFilenames {
+		filenameSet[filename] = uint32(i)
+	}
+
+	funcs := make([]*funcIndexTemplate, 0, len(m))
+	for _, fn := range m {
+		fn.fileID = filenameSet[fn.origFilename]
+		funcs = append(funcs, fn)
+	}
+	sort.Slice(funcs, func(i, j int) bool {
+		f1 := funcs[i]
+		f2 := funcs[j]
+		if f1.origFilename != f2.origFilename {
+			return f1.origFilename < f2.origFilename
+		}
+		if f1.key.TypeName != f2.key.TypeName {
+			return f1.key.TypeName < f2.key.TypeName
+		}
+		return f1.key.FuncName < f2.key.FuncName
+	})
+
+	// Step 3: put all aggregated points into one slice, bind data ranges to files.
 	allPoints := make([]dataPoint, 0, numDataPoints)
-	for f, fileValueByLine := range fileValues {
-		f.dataFrom = len(allPoints)
-		for _, pt := range fileValueByLine {
-			allPoints = append(allPoints, *pt)
-			if pt.line > f.maxLine {
-				f.maxLine = pt.line
+	for _, fn := range funcs {
+		fn.dataFrom = uint32(len(allPoints))
+		for _, pt := range fn.dataByLine {
+			allPoints = append(allPoints, pt)
+			if pt.line > fn.maxLine {
+				fn.maxLine = pt.line
 			}
-			if pt.line < f.minLine {
-				f.minLine = pt.line
+			if pt.line < fn.minLine {
+				fn.minLine = pt.line
 			}
 		}
-		f.dataTo = len(allPoints)
+		fn.dataTo = uint32(len(allPoints))
+
+		funcData := allPoints[fn.dataFrom:fn.dataTo]
+		sort.Slice(funcData, func(i, j int) bool {
+			return pointGreater(funcData[i], funcData[j])
+		})
+		topn := int(float64(len(funcData)) * w.index.config.Threshold)
+		if topn == 0 {
+			topn = 1
+		}
+		points := funcData[:topn]
+		currentLevel := 5
+		currentChunk := 0
+		forChunks(len(points), maxHeatLevel, func(chunkNum, i int) {
+			pt := &points[i]
+			if currentChunk != chunkNum {
+				currentLevel--
+				currentChunk = chunkNum
+			}
+			pt.flags.SetLocalLevel(currentLevel)
+		})
+		// A final sort: by line.
+		sort.Slice(funcData, func(i, j int) bool {
+			return funcData[i].line < funcData[j].line
+		})
 	}
 
 	// Pass 3: compute the global heat levels.
 	valueOrder := make([]uint32, len(allPoints))
 	for i := range allPoints {
 		valueOrder[i] = uint32(i)
-	}
-	pointGreater := func(x, y dataPoint) bool {
-		if x.value > y.value {
-			return true
-		}
-		if x.value < y.value {
-			return false
-		}
-		return x.line > y.line
 	}
 	sort.Slice(valueOrder, func(i, j int) bool {
 		x := allPoints[valueOrder[i]]
@@ -151,57 +234,14 @@ func (w *profileWalker) Walk() error {
 		})
 	}
 
-	// Pass 4: apply a final sort for per-file windows. Also compute the local heat levels.
-	for _, f := range m {
-		data := allPoints[f.dataFrom:f.dataTo]
-
-		sort.Slice(data, func(i, j int) bool {
-			return pointGreater(data[i], data[j])
-		})
-		topn := int(float64(len(data)) * w.index.config.Threshold)
-		if topn == 0 {
-			topn = 1
-		}
-		points := data[:topn]
-		currentLevel := 5
-		currentChunk := 0
-		forChunks(len(points), maxHeatLevel, func(chunkNum, i int) {
-			pt := &points[i]
-			if currentChunk != chunkNum {
-				currentLevel--
-				currentChunk = chunkNum
-			}
-			pt.flags.SetLocalLevel(currentLevel)
-		})
-		// A final sort: by line.
-		sort.Slice(data, func(i, j int) bool {
-			return data[i].line < data[j].line
-		})
-	}
-
-	for f, fileFuncByName := range fileFuncs {
-		f.funcs = make([]funcDataPoint, 0, len(fileFuncByName))
-		for _, fn := range fileFuncByName {
-			f.funcs = append(f.funcs, *fn)
-		}
-		// f.funcs are in kinda-random order due to the map range order.
-		// But we want to sort them by name anyway, so don't bother about
-		// fn.id order; we'll fix that using the idOrder table below.
-		sort.Slice(f.funcs, func(i, j int) bool {
-			return f.funcs[i].name < f.funcs[j].name
-		})
-		// idOrder maps func.id to funcs[i] index.
-		// So we can update the old IDs without any extra sort ops.
-		idOrder := make([]uint16, len(f.funcs))
-		for i := range f.funcs {
-			idOrder[f.funcs[i].id] = uint16(i)
-		}
-		data := allPoints[f.dataFrom:f.dataTo]
-		for i := range data {
-			pt := &data[i]
-			newFuncID := idOrder[pt.funcIndex]
-			fn := &f.funcs[newFuncID]
-			pt.funcIndex = newFuncID
+	w.index.filenames = sortedFilenames
+	w.index.funcs = make([]funcIndex, len(funcs))
+	w.index.funcIDByKey = map[Key]uint32{}
+	w.index.dataPoints = allPoints
+	for i, fn := range funcs {
+		funcData := allPoints[fn.dataFrom:fn.dataTo]
+		for i := range funcData {
+			pt := &funcData[i]
 			if pt.flags.GetLocalLevel() > int(fn.maxLocalLevel) {
 				fn.maxLocalLevel = uint8(pt.flags.GetLocalLevel())
 			}
@@ -209,10 +249,9 @@ func (w *profileWalker) Walk() error {
 				fn.maxGlobalLevel = uint8(pt.flags.GetGlobalLevel())
 			}
 		}
+		w.index.funcs[i] = fn.funcIndex
+		w.index.funcIDByKey[fn.key] = uint32(i)
 	}
-
-	w.index.byFilename = m
-	w.index.dataPoints = allPoints
 
 	return nil
 }

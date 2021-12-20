@@ -2,23 +2,23 @@ package heatmap
 
 import (
 	"fmt"
-	"path/filepath"
 	"testing"
 
 	"github.com/google/pprof/profile"
 )
 
 func BenchmarkQuery(b *testing.B) {
-	benchQueryLineRange := func(b *testing.B, suite *benchIndex, filename string, fromLine, toLine int, hit bool) {
+	benchQueryLineRange := func(b *testing.B, suite *benchIndex, keyString string, fromLine, toLine int, hit bool) {
 		suffix := "hit"
 		if !hit {
 			suffix = "miss"
 		}
-		key := fmt.Sprintf("QueryLineRange/%s/%s_%dto%d_%s", suite.name, filepath.Base(filename), fromLine, toLine, suffix)
-		b.Run(key, func(b *testing.B) {
+		key := convertTestKey(keyString)
+		benchName := fmt.Sprintf("QueryLine/%s/%s_%dto%d_%s", suite.name, key.Filename, fromLine, toLine, suffix)
+		b.Run(benchName, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				levels := 0
-				suite.i.QueryLineRange(filename, fromLine, toLine, func(line int, level HeatLevel) bool {
+				suite.i.QueryLineRange(key, fromLine, toLine, func(line int, level HeatLevel) bool {
 					levels += level.Local + level.Global
 					return true
 				})
@@ -35,15 +35,16 @@ func BenchmarkQuery(b *testing.B) {
 		})
 	}
 
-	benchQueryLine := func(b *testing.B, suite *benchIndex, filename string, line int, hit bool) {
+	benchQueryLine := func(b *testing.B, suite *benchIndex, keyString string, line int, hit bool) {
 		suffix := "hit"
 		if !hit {
 			suffix = "miss"
 		}
-		key := fmt.Sprintf("QueryLine/%s/%s_%d_%s", suite.name, filepath.Base(filename), line, suffix)
-		b.Run(key, func(b *testing.B) {
+		key := convertTestKey(keyString)
+		benchName := fmt.Sprintf("QueryLine/%s/%s_%d_%s", suite.name, key.Filename, line, suffix)
+		b.Run(benchName, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				result := suite.i.QueryLine(filename, line)
+				result := suite.i.QueryLine(key, line)
 				if hit {
 					if result.Local+result.Global == 0 {
 						b.Fatal("expected a hit, got a miss")
@@ -57,16 +58,16 @@ func BenchmarkQuery(b *testing.B) {
 		})
 	}
 
-	benchQueryLineRange(b, benchIndexList[1], "/home/user/proj/data/matrix.go", 110, 150, false)
-	benchQueryLineRange(b, benchIndexList[1], "/home/user/proj/data/matrix.go", 195, 202, true)
-	benchQueryLineRange(b, benchIndexList[1], "/home/user/proj/data/matrix.go", 200, 1050, true)
+	benchQueryLineRange(b, benchIndexList[1], "matrix.go:data.newMatrix", 110, 150, false)
+	benchQueryLineRange(b, benchIndexList[1], "matrix.go:data.newMatrix", 195, 202, true)
+	benchQueryLineRange(b, benchIndexList[1], "matrix.go:data.newMatrix", 200, 1050, true)
 
-	benchQueryLine(b, benchIndexList[0], "/home/user/proj/badfile.go", 50, false)
-	benchQueryLine(b, benchIndexList[0], "/home/user/proj/data/data.go", 67, false)
-	benchQueryLine(b, benchIndexList[0], "/home/user/proj/data/data.go", 70, true)
-	benchQueryLine(b, benchIndexList[1], "/home/user/proj/data/matrix.go", 150, false)
-	benchQueryLine(b, benchIndexList[1], "/home/user/proj/data/matrix.go", 100, true)
-	benchQueryLine(b, benchIndexList[1], "/home/user/proj/data/matrix.go", 201, true)
+	benchQueryLine(b, benchIndexList[0], "badfile.go:foo.badpkg", 50, false)
+	benchQueryLine(b, benchIndexList[0], "data.go:data.mul", 67, false)
+	benchQueryLine(b, benchIndexList[0], "data.go:data.mul", 70, true)
+	benchQueryLine(b, benchIndexList[1], "matrix.go:data.newMatrix", 150, false)
+	benchQueryLine(b, benchIndexList[1], "matrix.go:data.newMatrix", 100, true)
+	benchQueryLine(b, benchIndexList[1], "matrix.go:data.newMatrix", 201, true)
 }
 
 type benchIndex struct {
@@ -87,18 +88,18 @@ var benchIndexList = []*benchIndex{
 		"small",
 		IndexConfig{Threshold: 1.0},
 		newTestProfileBuilder().
-			AddSamples("/home/user/proj/foo.go/example",
+			AddSamples("/home/user/proj/foo.go:main.example",
 				15, []int{5, 19, 25, 90},
 				26, []int{5, 19, 25, 40},
 				30, []int{5, 20},
 				10, []int{5, 19}).
-			AddSamples("/home/user/proj/data/data.go/mul",
+			AddSamples("/home/user/proj/data/data.go:data.mul",
 				60, []int{70},
 				56, []int{70},
 				30, []int{70, 75},
 				67, []int{70},
 				100, []int{60, 50, 109}).
-			AddSamples("/home/user/go/src/runtime/slice.go/growslice",
+			AddSamples("/home/user/go/src/runtime/slice.go:runtime.growslice",
 				30, []int{921},
 				54, []int{921},
 				40, []int{921},
@@ -113,7 +114,7 @@ var benchIndexList = []*benchIndex{
 		"average",
 		IndexConfig{Threshold: 1.0},
 		newTestProfileBuilder().
-			AddSamples("/home/user/proj/foo.go/example",
+			AddSamples("/home/user/proj/foo.go:main.example",
 				15, []int{5, 19, 25, 90},
 				30, []int{5, 20},
 				59, []int{5, 19, 25, 40},
@@ -122,7 +123,7 @@ var benchIndexList = []*benchIndex{
 				100, []int{5, 90, 96, 48, 93},
 				30, []int{5, 20},
 				10, []int{5, 19}).
-			AddSamples("/home/user/proj/data/data.go/div",
+			AddSamples("/home/user/proj/data/data.go:data.div",
 				60, []int{70},
 				56, []int{70},
 				56, []int{70},
@@ -131,7 +132,7 @@ var benchIndexList = []*benchIndex{
 				30, []int{70, 75},
 				67, []int{70},
 				100, []int{60, 50, 109}).
-			AddSamples("/home/user/proj/data/matrix.go/newMatrix",
+			AddSamples("/home/user/proj/data/matrix.go:data.newMatrix",
 				100, []int{207},
 				100, []int{500, 305},
 				100, []int{207},
@@ -230,7 +231,7 @@ var benchIndexList = []*benchIndex{
 				100, []int{207},
 				100, []int{500, 305},
 				100, []int{207}).
-			AddSamples("/home/user/go/src/runtime/slice.go/mallocgc",
+			AddSamples("/home/user/go/src/runtime/slice.go:runtime.mallocgc",
 				30, []int{921},
 				54, []int{921},
 				40, []int{921},

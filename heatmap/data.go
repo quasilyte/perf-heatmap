@@ -6,32 +6,23 @@ import (
 
 const maxHeatLevel = 5
 
-type fileIndex struct {
-	minLine uint32
-	maxLine uint32
-
-	dataFrom int
-	dataTo   int
-
-	// Sorted by name.
-	funcs []funcDataPoint
-}
-
-func (f *fileIndex) NumPoints() int {
-	return f.dataTo - f.dataFrom
-}
-
-type funcDataPoint struct {
-	id uint16
-
+type funcIndex struct {
 	maxLocalLevel  uint8
 	maxGlobalLevel uint8
 
-	name string
+	// Line ranges inside a containing file.
+	minLine uint32
+	maxLine uint32
+
+	// Used to get the func data points range from the Index.
+	dataFrom uint32
+	dataTo   uint32
+
+	fileID uint32
 }
 
-func (pt funcDataPoint) String() string {
-	return fmt.Sprintf("{%d, %s}", pt.id, pt.name)
+func (fn *funcIndex) NumPoints() int {
+	return int(fn.dataTo - fn.dataFrom)
 }
 
 // dataPoint is a compact index data unit.
@@ -47,10 +38,9 @@ func (pt funcDataPoint) String() string {
 // If file contains more than 65535 functions with samples, oh well.
 // Other 16 bits are occupied by dataPointFlags.
 type dataPoint struct {
-	line      uint32
-	funcIndex uint16
-	flags     dataPointFlags
-	value     int64
+	line  uint32
+	flags dataPointFlags
+	value int64
 }
 
 func (pt *dataPoint) HeatLevel() HeatLevel {

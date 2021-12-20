@@ -6,29 +6,46 @@ import (
 	"github.com/google/pprof/profile"
 )
 
-// Index represents a parsed profile that can run heatmap queries efficiently.
-//
-// Index is not thread-safe.
-// Adding profiles / querying index requires synchronization.
-type Index struct {
-	byFilename map[string]*fileIndex
+type Key struct {
+	// TypeName is a receiver type name for methods.
+	// For functions it should be empty.
+	TypeName string
 
-	// A combined storage for every file index data points.
-	// To get a file-specificic data points, do the slicing like
-	// dataPoints[f.dataFrom:f.dataTo].
+	// FuncName is a Go function name.
+	// For methods, TypeName+FuncName compose a full method name.
+	FuncName string
+
+	// Filename is a base part of the fule file path.
+	// For the `/home/go/src/bytes/buffer.go` it would be just `buffer.go`.
+	Filename string
+
+	// PkgName is a symbol defining package name.
+	// For instance, if FuncID is `(*T).fn` and PkgName is `pkg`, then
+	// the full symbol ID is `pkg.(*T).fn`.
+	PkgName string
+}
+
+// Index represents a parsed profile that can run heatmap queries efficiently.
+type Index struct {
+	funcIDByKey map[Key]uint32
+
+	// A combined storage for all data points.
+	// To get func-specificic data points, do the slicing like
+	// dataPoints[fn.dataFrom:fn.dataTo].
 	//
-	// This per-file window is sorted by dataPoint line field
+	// This per-func window is sorted by dataPoint line field
 	// in ascending order, so window[0].line <= window[1].line.
 	dataPoints []dataPoint
+
+	funcs []funcIndex
+
+	// filenames is a list of full file names.
+	filenames []string
 
 	config IndexConfig
 }
 
 type IndexConfig struct {
-	// TrimPrefix is a filename prefix to be trimmed from all locations.
-	// If used, all filename arguments to the index need to trim this prefix too.
-	TrimPrefix string
-
 	// Threshold specifies where is the line between the "cold" and "hot" code.
 	// Zero value implies 0.5, not 0.
 	//
@@ -53,7 +70,11 @@ type IndexConfig struct {
 
 // FuncInfo contains some aggregated function info.
 type FuncInfo struct {
-	Name string
+	ID string
+
+	PkgName string
+
+	Filename string
 
 	MaxHeatLevel int
 
@@ -88,18 +109,13 @@ func (index *Index) AddProfile(p *profile.Profile) error {
 }
 
 func (index *Index) CollectFilenames() []string {
-	filenames := make([]string, 0, len(index.byFilename))
-	for filename := range index.byFilename {
-		filenames = append(filenames, filename)
-	}
-	sort.Strings(filenames)
-	return filenames
+	return index.filenames
 }
 
 type LineStats struct {
 	LineNum int
 
-	// Value is the aggregate
+	// Value is the aggregated profile samples value for this line.
 	Value int64
 
 	// HeatLevel is a file-local heat score according to the index settings.
@@ -122,78 +138,58 @@ type LineStats struct {
 	Func *FuncInfo
 }
 
-// HasFile reports whether index contains the file.
-func (index *Index) HasFile(filename string) bool {
-	_, ok := index.byFilename[filename]
-	return ok
-}
-
-// InspectFileLines visits all file data points using the provided callback.
-// To check whether index has a file, use HasFile().
-// To get all files contained inside the index, use CollectFilenames().
-func (index *Index) InspectFileLines(filename string, visit func(LineStats)) {
-	f := index.byFilename[filename]
-	if f == nil {
-		return
-	}
-	data := index.dataPoints[f.dataFrom:f.dataTo]
+// Inspect visits all data points using the provided callback.
+//
+// The data points traversal order is not deterministic, but
+// it's guaranteed to walk func-associated data points in
+// source line sorted order.
+func (index *Index) Inspect(callback func(LineStats)) {
 	var funcInfo FuncInfo
-	for _, pt := range data {
-		fn := &f.funcs[pt.funcIndex]
-		funcInfo.Name = fn.name
+	for key, funcID := range index.funcIDByKey {
+		fn := &index.funcs[funcID]
+		funcInfo.ID = formatFuncName("", key.TypeName, key.FuncName)
+		funcInfo.PkgName = key.PkgName
 		funcInfo.MaxHeatLevel = int(fn.maxLocalLevel)
 		funcInfo.MaxGlobalHeatLevel = int(fn.maxGlobalLevel)
-		visit(LineStats{
-			LineNum:         int(pt.line),
-			Value:           pt.value,
-			HeatLevel:       pt.flags.GetLocalLevel(),
-			GlobalHeatLevel: pt.flags.GetGlobalLevel(),
-			Func:            &funcInfo,
-		})
+		funcInfo.Filename = index.filenames[fn.fileID]
+		data := index.dataPoints[fn.dataFrom:fn.dataTo]
+		for _, pt := range data {
+			callback(LineStats{
+				LineNum:         int(pt.line),
+				Value:           pt.value,
+				HeatLevel:       pt.flags.GetLocalLevel(),
+				GlobalHeatLevel: pt.flags.GetGlobalLevel(),
+				Func:            &funcInfo,
+			})
+		}
 	}
-}
-
-func (index *Index) QueryFunc(filename, funcName string) HeatLevel {
-	var result HeatLevel
-	f, ok := index.byFilename[filename]
-	if !ok {
-		return result
-	}
-	i := sort.Search(len(f.funcs), func(i int) bool {
-		return f.funcs[i].name >= funcName
-	})
-	if i < len(f.funcs) && f.funcs[i].name == funcName {
-		fn := &f.funcs[i]
-		result.Local = int(fn.maxLocalLevel)
-		result.Global = int(fn.maxGlobalLevel)
-	}
-	return result
 }
 
 // QueryLineRange scans the file data points that are located in [lineFrom, lineTo] range.
-// fn is called for every matching data point.
+// callback is called for every matching data point.
 // Returning false from the callback causes the iteration to stop early.
-func (index *Index) QueryLineRange(filename string, lineFrom, lineTo int, fn func(HeatLevel) bool) {
+func (index *Index) QueryLineRange(key Key, lineFrom, lineTo int, callback func(line int, level HeatLevel) bool) {
 	if lineFrom == lineTo {
-		fn(index.QueryLine(filename, lineFrom))
+		callback(lineFrom, index.QueryLine(key, lineFrom))
 		return
 	}
-	index.queryLineRange(filename, lineFrom, lineTo, fn)
+	index.queryLineRange(key, lineFrom, lineTo, callback)
 }
 
-func (index *Index) QueryLine(filename string, line int) HeatLevel {
+func (index *Index) QueryLine(key Key, line int) HeatLevel {
 	var result HeatLevel
-	f, ok := index.byFilename[filename]
+	funcID, ok := index.funcIDByKey[key]
 	if !ok {
 		return result
 	}
+	fn := index.funcs[funcID]
 
 	// A quick range check to avoid the search.
-	if line < int(f.minLine) || line > int(f.maxLine) {
+	if line < int(fn.minLine) || line > int(fn.maxLine) {
 		return result
 	}
 
-	data := index.dataPoints[f.dataFrom:f.dataTo]
+	data := index.dataPoints[fn.dataFrom:fn.dataTo]
 	if len(data) <= 4 {
 		// Short data slice, use a linear search.
 		for i := range data {
@@ -216,30 +212,31 @@ func (index *Index) QueryLine(filename string, line int) HeatLevel {
 	return result
 }
 
-func (index *Index) queryLineRange(filename string, lineFrom, lineTo int, fn func(HeatLevel) bool) {
+func (index *Index) queryLineRange(key Key, lineFrom, lineTo int, callback func(line int, level HeatLevel) bool) {
 	if lineFrom > lineTo {
 		panic("lineFrom > lineTo")
 	}
 
-	f, ok := index.byFilename[filename]
+	funcID, ok := index.funcIDByKey[key]
 	if !ok {
 		return
 	}
+	fn := index.funcs[funcID]
 
 	// A quick range check to avoid the search.
-	if int(f.maxLine) < lineFrom || int(f.minLine) > lineTo {
+	if int(fn.maxLine) < lineFrom || int(fn.minLine) > lineTo {
 		return
 	}
 
 	// Narrow the search window by the data points range.
-	if int(f.minLine) > lineFrom {
-		lineFrom = int(f.minLine)
+	if int(fn.minLine) > lineFrom {
+		lineFrom = int(fn.minLine)
 	}
-	if int(f.maxLine) < lineTo {
-		lineTo = int(f.maxLine)
+	if int(fn.maxLine) < lineTo {
+		lineTo = int(fn.maxLine)
 	}
 
-	data := index.dataPoints[f.dataFrom:f.dataTo]
+	data := index.dataPoints[fn.dataFrom:fn.dataTo]
 
 	// It's possible to optimize the case where f.minLine=lineFrom && f.maxLine=lineTo,
 	// where we would just walk the entire data slice, but
@@ -248,13 +245,15 @@ func (index *Index) queryLineRange(filename string, lineFrom, lineTo int, fn fun
 		return data[i].line >= uint32(lineFrom)
 	})
 	if i < len(data) && data[i].line >= uint32(lineFrom) && data[i].line <= uint32(lineTo) {
+		pt := &data[i]
 		// i is a first matching entry, the leftmost one.
-		if !fn(data[i].HeatLevel()) {
+		if !callback(int(pt.line), pt.HeatLevel()) {
 			return
 		}
 		// All data points until lineTo are matched too.
 		for j := i + 1; j < len(data) && data[j].line <= uint32(lineTo); j++ {
-			if !fn(data[j].HeatLevel()) {
+			pt := &data[j]
+			if !callback(int(pt.line), pt.HeatLevel()) {
 				return
 			}
 		}

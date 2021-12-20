@@ -15,7 +15,7 @@ type Key struct {
 	// For methods, TypeName+FuncName compose a full method name.
 	FuncName string
 
-	// Filename is a base part of the fule file path.
+	// Filename is a base part of the full file path.
 	// For the `/home/go/src/bytes/buffer.go` it would be just `buffer.go`.
 	Filename string
 

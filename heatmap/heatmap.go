@@ -20,8 +20,6 @@ type Key struct {
 	Filename string
 
 	// PkgName is a symbol defining package name.
-	// For instance, if FuncID is `(*T).fn` and PkgName is `pkg`, then
-	// the full symbol ID is `pkg.(*T).fn`.
 	PkgName string
 }
 

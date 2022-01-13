@@ -19,6 +19,29 @@ func addProfile(index *Index, p *profile.Profile) error {
 	return w.Walk()
 }
 
+func trimLambdaSuffix(s string) string {
+	end := len(s) - 1
+	for {
+		i := end
+		for s[i] >= '0' && s[i] <= '9' {
+			i--
+		}
+		found := false
+		if strings.HasSuffix(s[:i+1], ".func") {
+			i -= len(".func")
+			found = true
+		} else if s[i] == '.' {
+			i--
+			found = true
+		}
+		if !found {
+			break
+		}
+		end = i
+	}
+	return s[:end+1]
+}
+
 func parseFuncName(s string) (pkgName, typeName, funcName string) {
 	lastSlash := strings.LastIndexByte(s, '/')
 	if lastSlash != -1 {
@@ -42,9 +65,9 @@ func parseFuncName(s string) (pkgName, typeName, funcName string) {
 		}
 		resultTypeName := rest[offset:rparen]
 		resultFuncName := rest[rparen+len(")."):]
-		return resultPkgName, resultTypeName, resultFuncName
+		return resultPkgName, resultTypeName, trimLambdaSuffix(resultFuncName)
 	}
-	return resultPkgName, "", rest
+	return resultPkgName, "", trimLambdaSuffix(rest)
 }
 
 type profileWalker struct {

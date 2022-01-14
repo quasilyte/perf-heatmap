@@ -79,11 +79,6 @@ type FuncInfo struct {
 	MaxGlobalHeatLevel int
 }
 
-type HeatLevel struct {
-	Local  int
-	Global int
-}
-
 // NewIndex creates an empty heatmap index.
 // Use AddProfile method to populate it.
 func NewIndex(config IndexConfig) *Index {
@@ -133,6 +128,7 @@ type LineStats struct {
 	GlobalHeatLevel int
 
 	// Func is a containing function info.
+	// Note: it will be nil for Query functions.
 	Func *FuncInfo
 }
 
@@ -166,16 +162,16 @@ func (index *Index) Inspect(callback func(LineStats)) {
 // QueryLineRange scans the file data points that are located in [lineFrom, lineTo] range.
 // callback is called for every matching data point.
 // Returning false from the callback causes the iteration to stop early.
-func (index *Index) QueryLineRange(key Key, lineFrom, lineTo int, callback func(line int, level HeatLevel) bool) {
+func (index *Index) QueryLineRange(key Key, lineFrom, lineTo int, callback func(stats LineStats) bool) {
 	if lineFrom == lineTo {
-		callback(lineFrom, index.QueryLine(key, lineFrom))
+		callback(index.QueryLine(key, lineFrom))
 		return
 	}
 	index.queryLineRange(key, lineFrom, lineTo, callback)
 }
 
-func (index *Index) QueryLine(key Key, line int) HeatLevel {
-	var result HeatLevel
+func (index *Index) QueryLine(key Key, line int) LineStats {
+	var result LineStats
 	funcID, ok := index.funcIDByKey[key]
 	if !ok {
 		return result
@@ -193,7 +189,7 @@ func (index *Index) QueryLine(key Key, line int) HeatLevel {
 		for i := range data {
 			pt := &data[i]
 			if pt.line == uint32(line) {
-				result = pt.HeatLevel()
+				result = pt.Stats()
 				break
 			}
 		}
@@ -203,14 +199,14 @@ func (index *Index) QueryLine(key Key, line int) HeatLevel {
 			return data[i].line >= uint32(line)
 		})
 		if i < len(data) && data[i].line == uint32(line) {
-			result = data[i].HeatLevel()
+			result = data[i].Stats()
 		}
 	}
 
 	return result
 }
 
-func (index *Index) queryLineRange(key Key, lineFrom, lineTo int, callback func(line int, level HeatLevel) bool) {
+func (index *Index) queryLineRange(key Key, lineFrom, lineTo int, callback func(stats LineStats) bool) {
 	if lineFrom > lineTo {
 		panic("lineFrom > lineTo")
 	}
@@ -245,13 +241,13 @@ func (index *Index) queryLineRange(key Key, lineFrom, lineTo int, callback func(
 	if i < len(data) && data[i].line >= uint32(lineFrom) && data[i].line <= uint32(lineTo) {
 		pt := &data[i]
 		// i is a first matching entry, the leftmost one.
-		if !callback(int(pt.line), pt.HeatLevel()) {
+		if !callback(pt.Stats()) {
 			return
 		}
 		// All data points until lineTo are matched too.
 		for j := i + 1; j < len(data) && data[j].line <= uint32(lineTo); j++ {
 			pt := &data[j]
-			if !callback(int(pt.line), pt.HeatLevel()) {
+			if !callback(pt.Stats()) {
 				return
 			}
 		}

@@ -43,10 +43,12 @@ type dataPoint struct {
 	value int64
 }
 
-func (pt *dataPoint) HeatLevel() HeatLevel {
-	return HeatLevel{
-		Local:  pt.flags.GetLocalLevel(),
-		Global: pt.flags.GetGlobalLevel(),
+func (pt *dataPoint) Stats() LineStats {
+	return LineStats{
+		LineNum:         int(pt.line),
+		Value:           pt.value,
+		HeatLevel:       pt.flags.GetLocalLevel(),
+		GlobalHeatLevel: pt.flags.GetGlobalLevel(),
 	}
 }
 

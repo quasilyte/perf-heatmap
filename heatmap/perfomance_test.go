@@ -18,8 +18,8 @@ func BenchmarkQuery(b *testing.B) {
 		b.Run(benchName, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				levels := 0
-				suite.i.QueryLineRange(key, fromLine, toLine, func(line int, level HeatLevel) bool {
-					levels += level.Local + level.Global
+				suite.i.QueryLineRange(key, fromLine, toLine, func(l LineStats) bool {
+					levels += l.HeatLevel + l.GlobalHeatLevel
 					return true
 				})
 				if hit {
@@ -46,11 +46,11 @@ func BenchmarkQuery(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				result := suite.i.QueryLine(key, line)
 				if hit {
-					if result.Local+result.Global == 0 {
+					if result.HeatLevel+result.GlobalHeatLevel == 0 {
 						b.Fatal("expected a hit, got a miss")
 					}
 				} else {
-					if result.Local+result.Global != 0 {
+					if result.HeatLevel+result.GlobalHeatLevel != 0 {
 						b.Fatal("expected a miss, got a hit")
 					}
 				}

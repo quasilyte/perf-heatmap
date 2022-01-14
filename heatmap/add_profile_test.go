@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/pprof/profile"
 )
 
@@ -140,14 +141,14 @@ func TestAddProfile(t *testing.T) {
 	type testQuery struct {
 		key  string
 		line int
-		want HeatLevel
+		want LineStats
 	}
 
 	type testRangeQuery struct {
 		key      string
 		fromLine int
 		toLine   int
-		want     []HeatLevel
+		want     []LineStats
 	}
 
 	type testCase struct {
@@ -156,6 +157,10 @@ func TestAddProfile(t *testing.T) {
 		want         []string
 		queries      []testQuery
 		rangeQueries []testRangeQuery
+	}
+
+	newStats := func(local, global int) LineStats {
+		return LineStats{HeatLevel: local, GlobalHeatLevel: global}
 	}
 
 	tests := []testCase{
@@ -195,20 +200,20 @@ func TestAddProfile(t *testing.T) {
 				"/home/gopher/buffer.go:10: V= 75 L=5 G=5",
 			},
 			queries: []testQuery{
-				{"buffer.go:example.fn", 10, HeatLevel{5, 5}},
+				{"buffer.go:example.fn", 10, newStats(5, 5)},
 
 				// Query using the invalid func name.
-				{"buffer.go:example2.fn", 10, HeatLevel{}},
+				{"buffer.go:example2.fn", 10, newStats(0, 0)},
 				// Query at the invalid line.
-				{"buffer.go:example.fn", 9, HeatLevel{}},
+				{"buffer.go:example.fn", 9, newStats(0, 0)},
 				// Query using the invalid filename.
-				{"buffer2.go:example.fn", 10, HeatLevel{}},
+				{"buffer2.go:example.fn", 10, newStats(0, 0)},
 			},
 			rangeQueries: []testRangeQuery{
-				{"buffer.go:example.fn", 9, 11, []HeatLevel{{5, 5}}},
-				{"buffer.go:example.fn", 6, 10, []HeatLevel{{5, 5}}},
-				{"buffer.go:example.fn", 6, 9, []HeatLevel{}},
-				{"buffer.go:example.fn", 15, 20, []HeatLevel{}},
+				{"buffer.go:example.fn", 9, 11, []LineStats{newStats(5, 5)}},
+				{"buffer.go:example.fn", 6, 10, []LineStats{newStats(5, 5)}},
+				{"buffer.go:example.fn", 6, 9, []LineStats{}},
+				{"buffer.go:example.fn", 15, 20, []LineStats{}},
 			},
 		},
 
@@ -726,43 +731,52 @@ func TestAddProfile(t *testing.T) {
 					key:      "file.go:example.testfunc",
 					fromLine: 110,
 					toLine:   150,
-					want:     []HeatLevel{},
+					want:     []LineStats{},
 				},
 				{
 					key:      "file.go:example.testfunc",
 					fromLine: 195,
 					toLine:   205,
-					want: []HeatLevel{
-						{3, 3},
-						{1, 1},
-						{4, 4},
+					want: []LineStats{
+						newStats(3, 3),
+						newStats(1, 1),
+						newStats(4, 4),
 					},
 				},
 				{
 					key:      "file.go:example.testfunc",
 					fromLine: 200,
 					toLine:   205,
-					want: []HeatLevel{
-						{3, 3},
-						{1, 1},
-						{4, 4},
+					want: []LineStats{
+						newStats(3, 3),
+						newStats(1, 1),
+						newStats(4, 4),
 					},
 				},
 				{
 					key:      "file.go:example.testfunc",
 					fromLine: 202,
 					toLine:   205,
-					want: []HeatLevel{
-						{4, 4},
+					want: []LineStats{
+						newStats(4, 4),
 					},
 				},
 			},
 		},
 	}
 
+	ignoreFields := cmpopts.IgnoreFields(LineStats{}, "Value", "LineNum")
+	statsDiff := func(x, y interface{}) string {
+		return cmp.Diff(x, y, ignoreFields)
+	}
+
 	validateIndex := func(t *testing.T, index *Index) {
 		if !sort.IsSorted(sort.StringSlice(index.filenames)) {
 			t.Fatal("filenames are not sorted correctly")
+		}
+
+		eqStats := func(x, y LineStats) bool {
+			return x.HeatLevel == y.HeatLevel && x.GlobalHeatLevel == y.GlobalHeatLevel
 		}
 
 		for key, funcID := range index.funcIDByKey {
@@ -773,34 +787,34 @@ func TestAddProfile(t *testing.T) {
 			for _, pt := range data {
 				linesSlice = append(linesSlice, int(pt.line))
 				haveValues := index.QueryLine(key, int(pt.line))
-				wantValues := HeatLevel{Local: pt.flags.GetLocalLevel(), Global: pt.flags.GetGlobalLevel()}
-				if haveValues != wantValues {
+				wantValues := LineStats{HeatLevel: pt.flags.GetLocalLevel(), GlobalHeatLevel: pt.flags.GetGlobalLevel()}
+				if !eqStats(haveValues, wantValues) {
 					t.Fatalf("QueryLine(%s, %d): invalid heat values\nhave: %#v\nwant: %#v",
 						filename, pt.line, haveValues, wantValues)
 				}
-				var haveValues2 HeatLevel
-				index.queryLineRange(key, int(pt.line), int(pt.line), func(line int, l HeatLevel) bool {
+				var haveValues2 LineStats
+				index.queryLineRange(key, int(pt.line), int(pt.line), func(l LineStats) bool {
 					haveValues2 = l
-					if line != int(pt.line) {
+					if l.LineNum != int(pt.line) {
 						t.Fatalf("incorrect line from the queryLineRange()")
 					}
 					return true
 				})
-				if haveValues2 != wantValues {
+				if !eqStats(haveValues2, wantValues) {
 					t.Fatalf("QueryLineRange(%s, %d, %d): invalid heat values\nhave: %#v\nwant: %#v",
 						filename, pt.line, pt.line, haveValues2, wantValues)
 				}
-				var haveValues3 HeatLevel
-				index.queryLineRange(key, int(pt.line), int(pt.line), func(line int, l HeatLevel) bool {
+				var haveValues3 LineStats
+				index.queryLineRange(key, int(pt.line), int(pt.line), func(l LineStats) bool {
 					haveValues3 = l
 					return true
 				})
-				if haveValues3 != wantValues {
+				if !eqStats(haveValues3, wantValues) {
 					t.Fatalf("queryLineRange(%s, %d, %d): invalid heat values\nhave: %#v\nwant: %#v",
 						filename, pt.line, pt.line, haveValues3, wantValues)
 				}
 				haveTotal := 0
-				index.queryLineRange(key, 1, int(fn.maxLine), func(line int, l HeatLevel) bool {
+				index.queryLineRange(key, 1, int(fn.maxLine), func(l LineStats) bool {
 					haveTotal++
 					return true
 				})
@@ -819,7 +833,6 @@ func TestAddProfile(t *testing.T) {
 	}
 
 	run := func(t *testing.T, name string, test testCase) {
-		t.Helper()
 		t.Run(name, func(t *testing.T) {
 			p := test.buildProfile()
 			index := NewIndex(test.config)
@@ -829,24 +842,24 @@ func TestAddProfile(t *testing.T) {
 			validateIndex(t, index)
 			have := dumpIndex(index)
 			want := test.want
-			if diff := cmp.Diff(have, want); diff != "" {
+			if diff := statsDiff(have, want); diff != "" {
 				t.Errorf("results mismatch:\n(+want -have)\n%s", diff)
 			}
 			for _, q := range test.queries {
 				have := index.QueryLine(convertTestKey(q.key), q.line)
 				want := q.want
-				if diff := cmp.Diff(have, want); diff != "" {
+				if diff := statsDiff(have, want); diff != "" {
 					t.Errorf("QueryLine(%q, %d) results:\n(+want -have)\n%s", q.key, q.line, diff)
 				}
 			}
 			for _, q := range test.rangeQueries {
-				have := []HeatLevel{}
-				index.queryLineRange(convertTestKey(q.key), q.fromLine, q.toLine, func(line int, l HeatLevel) bool {
+				have := []LineStats{}
+				index.queryLineRange(convertTestKey(q.key), q.fromLine, q.toLine, func(l LineStats) bool {
 					have = append(have, l)
 					return true
 				})
 				want := q.want
-				if diff := cmp.Diff(have, want); diff != "" {
+				if diff := statsDiff(have, want); diff != "" {
 					t.Errorf("QueryLineRange(%q, %d, %d) results:\n(+want -have)\n%s", q.key, q.fromLine, q.toLine, diff)
 				}
 			}

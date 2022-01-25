@@ -11,16 +11,17 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/pprof/profile"
+	"github.com/quasilyte/pprofutil"
 )
 
 func convertTestKey(s string) Key {
 	var key Key
 	parts := strings.Split(s, ":")
 	key.Filename = parts[0]
-	pkgName, typeName, funcName := parseFuncName(parts[1])
-	key.PkgName = pkgName
-	key.TypeName = typeName
-	key.FuncName = funcName
+	sym := pprofutil.ParseFuncName(parts[1])
+	key.PkgName = sym.PkgName
+	key.TypeName = sym.TypeName
+	key.FuncName = sym.FuncName
 	return key
 }
 
@@ -52,50 +53,6 @@ func TestConvertTestKey(t *testing.T) {
 		}
 		if k.FuncName != test.funcName {
 			t.Fatalf("convertTestKey(%q) funcName => have %s, want %s", test.s, k.FuncName, test.funcName)
-		}
-	}
-}
-
-func TestParseFuncName(t *testing.T) {
-	tests := []struct {
-		s        string
-		pkgName  string
-		typeName string
-		funcName string
-	}{
-		{"", "", "", ""},
-		{"indexbyte", "", "", "indexbyte"},
-		{"strings.SplitN", "strings", "", "SplitN"},
-		{"testing.(*B).launch", "testing", "B", "launch"},
-		{"a.(Example).b", "a", "Example", "b"},
-		{"a.(Example).b.func1.1", "a", "Example", "b"},
-		{"runtime.gcBgMarkWorker.func2", "runtime", "", "gcBgMarkWorker"},
-		{"runtime.gcMarkDone.func1.1", "runtime", "", "gcMarkDone"},
-		{"github.com/quasilyte/gogrep.(*matcher).matchNodeWithInst", "gogrep", "matcher", "matchNodeWithInst"},
-		{"github.com/quasilyte/gogrep.(*matcher).matchNodeWithInst.func1", "gogrep", "matcher", "matchNodeWithInst"},
-		{"github.com/quasilyte/gogrep.(*matcher).matchNodeWithInst.func1.1", "gogrep", "matcher", "matchNodeWithInst"},
-		{"aaa/bbb.(CCC).fff.func1", "bbb", "CCC", "fff"},
-		{"aaa/bbb.(*CCC).fff.func1", "bbb", "CCC", "fff"},
-		{"/aaa/bbb.(*CCC).fff.func1", "bbb", "CCC", "fff"},
-		{"/aaa/bbb.(*CCC).fff.func10.20.30", "bbb", "CCC", "fff"},
-		{"/aaa/bbb.(*CCC).fff.func10.func20.30", "bbb", "CCC", "fff"},
-		{"/aaa/bbb.(*CCC).fff.func10.func20.func30", "bbb", "CCC", "fff"},
-		{"/aaa/bbb.(*CCC).func10", "bbb", "CCC", "func10"},
-		{"/aaa/bbb.(*CCC).func10.1", "bbb", "CCC", "func10"},
-		{"/aaa/bbb.(*CCC).func10.func1", "bbb", "CCC", "func10"},
-		{"aaa.com/bbb.ccc/ddd.(EEE).fff", "ddd", "EEE", "fff"},
-	}
-
-	for _, test := range tests {
-		pkgName, typeName, funcName := parseFuncName(test.s)
-		if pkgName != test.pkgName {
-			t.Fatalf("parseFuncName(%q) pkgName => have %s, want %s", test.s, pkgName, test.pkgName)
-		}
-		if typeName != test.typeName {
-			t.Fatalf("parseFuncName(%q) typeName => have %s, want %s", test.s, typeName, test.typeName)
-		}
-		if funcName != test.funcName {
-			t.Fatalf("parseFuncName(%q) funcName => have %s, want %s", test.s, funcName, test.funcName)
 		}
 	}
 }

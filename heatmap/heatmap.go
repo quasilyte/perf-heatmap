@@ -105,11 +105,21 @@ func (index *Index) CollectFilenames() []string {
 	return index.filenames
 }
 
+// MemoryUsageApprox returns the approximate size of this index in bytes.
+// Note: it implies 64-bit architecture.
+func (index *Index) MemoryUsageApprox() int {
+	return memoryUsageApprox(index)
+}
+
 type LineStats struct {
 	LineNum int
 
 	// Value is the aggregated profile samples value for this line.
+	// It's the same as cumulative value displayed in pprof.
 	Value int64
+
+	// FlatValue, unlike Value, includes only "own" samples for this line.
+	FlatValue int64
 
 	// HeatLevel is a file-local heat score according to the index settings.
 	//
@@ -150,7 +160,8 @@ func (index *Index) Inspect(callback func(LineStats)) {
 		for _, pt := range data {
 			callback(LineStats{
 				LineNum:         int(pt.line),
-				Value:           pt.value,
+				Value:           pt.cumValue.Nanoseconds(),
+				FlatValue:       pt.flatValue.Nanoseconds(),
 				HeatLevel:       pt.flags.GetLocalLevel(),
 				GlobalHeatLevel: pt.flags.GetGlobalLevel(),
 				Func:            &funcInfo,

@@ -63,6 +63,9 @@ func cmdStat(args []string) error {
 		return err
 	}
 
+	size := index.MemoryUsageApprox()
+	fmt.Printf("index size approx: %.2f MB (%d bytes)\n", float64(size)*0.000001, size)
+
 	currentFunc := ""
 	index.Inspect(func(s heatmap.LineStats) {
 		if !filenameRE.MatchString(s.Func.Filename) {
@@ -72,8 +75,8 @@ func cmdStat(args []string) error {
 			currentFunc = s.Func.ID
 			fmt.Printf("  func %s.%s (%s):\n", s.Func.PkgName, currentFunc, s.Func.Filename)
 		}
-		fmt.Printf("    line %4d: %6.2fs L=%d G=%d\n",
-			s.LineNum, time.Duration(s.Value).Seconds(), s.HeatLevel, s.GlobalHeatLevel)
+		fmt.Printf("    line %4d: %6.2fs flat %6.2fs cum L=%d G=%d\n",
+			s.LineNum, time.Duration(s.FlatValue).Seconds(), time.Duration(s.Value).Seconds(), s.HeatLevel, s.GlobalHeatLevel)
 	})
 
 	return nil

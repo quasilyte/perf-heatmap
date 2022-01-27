@@ -35,23 +35,34 @@ func (fn *funcIndex) NumPoints() int {
 // The saved 32 bits go into the extra metadata.
 // The first 16 bits are occupied by dataPointFlags.
 // The Other 16 bits are unused for now.
+//
+// The sample values are recorded in microseconds instead of the raw
+// nanoseconds. We do this to encode more time in uint32 value.
 type dataPoint struct {
-	line  uint32
-	flags dataPointFlags
-	value int64
+	line      uint32
+	flags     dataPointFlags
+	flatValue durationValue
+	cumValue  durationValue
 }
+
+type durationValue uint32
+
+func (v durationValue) Nanoseconds() int64 { return int64(v) * 1000 }
+func (v durationValue) Microsecond() int64 { return int64(v) }
 
 func (pt *dataPoint) Stats() LineStats {
 	return LineStats{
 		LineNum:         int(pt.line),
-		Value:           pt.value,
+		Value:           pt.cumValue.Nanoseconds(),
+		FlatValue:       pt.flatValue.Nanoseconds(),
 		HeatLevel:       pt.flags.GetLocalLevel(),
 		GlobalHeatLevel: pt.flags.GetGlobalLevel(),
 	}
 }
 
 func (pt dataPoint) String() string {
-	return fmt.Sprintf("{%d %s}", pt.value, pt.flags)
+	return fmt.Sprintf("{%d/flat %d/cum %s}",
+		pt.flatValue.Nanoseconds(), pt.cumValue.Nanoseconds(), pt.flags)
 }
 
 // Upper 3 bits are for the local level value.

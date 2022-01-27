@@ -88,7 +88,7 @@ func TestAddProfile(t *testing.T) {
 			for i := range data {
 				pt := &data[i]
 				l := fmt.Sprintf("%s:%d: V=%3d L=%d G=%d",
-					filename, pt.line, pt.value, pt.flags.GetLocalLevel(), pt.flags.GetGlobalLevel())
+					filename, pt.line, pt.cumValue.Microsecond(), pt.flags.GetLocalLevel(), pt.flags.GetGlobalLevel())
 				lines = append(lines, l)
 			}
 		}
@@ -123,8 +123,8 @@ func TestAddProfile(t *testing.T) {
 	tests := []testCase{
 		{
 			buildProfile: newTestProfileBuilder().
-				AddSamples("buffer.go:example.f", 25, []int{10}).
-				AddSamples("buffer.go:example.f", 75, []int{10}).
+				AddSamples("buffer.go:example.f", 25000, []int{10}).
+				AddSamples("buffer.go:example.f", 75000, []int{10}).
 				Build,
 			config: IndexConfig{Threshold: 0.25},
 			want: []string{
@@ -136,8 +136,8 @@ func TestAddProfile(t *testing.T) {
 		{
 			buildProfile: newTestProfileBuilder().
 				AddSamples("buffer.go:example.f",
-					25, []int{10},
-					75, []int{10}).
+					25000, []int{10},
+					75000, []int{10}).
 				Build,
 			config: IndexConfig{Threshold: 0.25},
 			want: []string{
@@ -149,7 +149,7 @@ func TestAddProfile(t *testing.T) {
 		{
 			buildProfile: newTestProfileBuilder().
 				AddSamples("/home/gopher/buffer.go:example.fn",
-					75, []int{10}).
+					75000, []int{10}).
 				Build,
 			config: IndexConfig{Threshold: 0.25},
 			want: []string{
@@ -177,8 +177,8 @@ func TestAddProfile(t *testing.T) {
 		{
 			buildProfile: newTestProfileBuilder().
 				AddSamples("buffer.go:pkg.example",
-					75, []int{11, 12},
-					25, []int{10}).
+					75000, []int{11, 12},
+					25000, []int{10}).
 				Build,
 			config: IndexConfig{Threshold: 0.25},
 			want: []string{
@@ -192,11 +192,11 @@ func TestAddProfile(t *testing.T) {
 		{
 			buildProfile: newTestProfileBuilder().
 				AddSamples("buffer.go:example.fff",
-					10, []int{5},
-					11, []int{4},
-					12, []int{3},
-					13, []int{2},
-					14, []int{1}).
+					10000, []int{5},
+					11000, []int{4},
+					12000, []int{3},
+					13000, []int{2},
+					14000, []int{1}).
 				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
@@ -212,11 +212,11 @@ func TestAddProfile(t *testing.T) {
 		{
 			buildProfile: newTestProfileBuilder().
 				AddSamples("buffer.go:example.example",
-					10, []int{5},
-					11, []int{4},
-					12, []int{3},
-					13, []int{2},
-					14, []int{1}).
+					10000, []int{5},
+					11000, []int{4},
+					12000, []int{3},
+					13000, []int{2},
+					14000, []int{1}).
 				Build,
 			config: IndexConfig{Threshold: 0.6},
 			want: []string{
@@ -232,11 +232,11 @@ func TestAddProfile(t *testing.T) {
 		{
 			buildProfile: newTestProfileBuilder().
 				AddSamples("buffer.go:example.example",
-					10, []int{5},
-					11, []int{4},
-					12, []int{3},
-					13, []int{2},
-					14, []int{1}).
+					10000, []int{5},
+					11000, []int{4},
+					12000, []int{3},
+					13000, []int{2},
+					14000, []int{1}).
 				Build,
 			config: IndexConfig{Threshold: 0.1},
 			want: []string{
@@ -252,11 +252,11 @@ func TestAddProfile(t *testing.T) {
 		{
 			buildProfile: newTestProfileBuilder().
 				AddSamples("buffer.go:example.example",
-					10, []int{5},
-					11, []int{4},
-					12, []int{3},
-					13, []int{2},
-					14, []int{1}).
+					10000, []int{5},
+					11000, []int{4},
+					12000, []int{3},
+					13000, []int{2},
+					14000, []int{1}).
 				Build,
 			config: IndexConfig{Threshold: 0.01},
 			want: []string{
@@ -272,20 +272,20 @@ func TestAddProfile(t *testing.T) {
 		{
 			buildProfile: newTestProfileBuilder().
 				AddSamples("a.go:pkg1.(*T).f2",
-					100, []int{1, 2, 3},
-					50, []int{2, 3},
-					25, []int{3}).
+					100000, []int{1, 2, 3},
+					50000, []int{2, 3},
+					25000, []int{3}).
 				AddSamples("a.go:pkg1.(*T).f1",
-					150, []int{6},
-					160, []int{6},
-					80, []int{10},
-					40, []int{11}).
+					150000, []int{6},
+					160000, []int{6},
+					80000, []int{10},
+					40000, []int{11}).
 				AddSamples("b.go:pkg2.f",
-					40, []int{5, 6},
-					40, []int{5, 6},
-					40, []int{5, 6},
-					40, []int{5, 6},
-					40, []int{5, 6}).
+					40000, []int{5, 6},
+					40000, []int{5, 6},
+					40000, []int{5, 6},
+					40000, []int{5, 6},
+					40000, []int{5, 6}).
 				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
@@ -308,21 +308,21 @@ func TestAddProfile(t *testing.T) {
 		{
 			buildProfile: newTestProfileBuilder().
 				AddSamples("a.go:pkg.f1",
-					100, []int{1, 2, 3},
-					50, []int{2, 3},
-					25, []int{3},
-					500, []int{4}).
+					100000, []int{1, 2, 3},
+					50000, []int{2, 3},
+					25000, []int{3},
+					500000, []int{4}).
 				AddSamples("a.go:pkg.f2",
-					150, []int{6},
-					160, []int{6},
-					80, []int{10},
-					40, []int{11}).
+					150000, []int{6},
+					160000, []int{6},
+					80000, []int{10},
+					40000, []int{11}).
 				AddSamples("b.go:pkg.f",
-					40, []int{5, 6},
-					40, []int{5, 6},
-					40, []int{5, 6},
-					40, []int{5, 6},
-					40, []int{5, 6}).
+					40000, []int{5, 6},
+					40000, []int{5, 6},
+					40000, []int{5, 6},
+					40000, []int{5, 6},
+					40000, []int{5, 6}).
 				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
@@ -346,33 +346,33 @@ func TestAddProfile(t *testing.T) {
 		{
 			buildProfile: newTestProfileBuilder().
 				AddSamples("a.go:example.f1",
-					100, []int{1, 2, 3},
-					50, []int{2, 3},
-					25, []int{3},
-					500, []int{4}).
+					100000, []int{1, 2, 3},
+					50000, []int{2, 3},
+					25000, []int{3},
+					500000, []int{4}).
 				AddSamples("a.go:example.f2",
-					150, []int{6},
-					160, []int{6},
-					80, []int{10},
-					40, []int{11},
-					150, []int{14},
-					160, []int{15},
-					80, []int{16},
-					40, []int{16},
-					150, []int{17},
-					160, []int{19},
-					80, []int{24},
-					40, []int{28}).
+					150000, []int{6},
+					160000, []int{6},
+					80000, []int{10},
+					40000, []int{11},
+					150000, []int{14},
+					160000, []int{15},
+					80000, []int{16},
+					40000, []int{16},
+					150000, []int{17},
+					160000, []int{19},
+					80000, []int{24},
+					40000, []int{28}).
 				AddSamples("b.go:example.f",
-					40, []int{5, 6},
-					40, []int{5, 7},
-					40, []int{5, 7},
-					40, []int{5, 6},
-					40, []int{5, 6}).
+					40000, []int{5, 6},
+					40000, []int{5, 7},
+					40000, []int{5, 7},
+					40000, []int{5, 6},
+					40000, []int{5, 6}).
 				AddSamples("c.go:example.f",
-					1, []int{1},
-					2, []int{1},
-					3, []int{1}).
+					1000, []int{1},
+					2000, []int{1},
+					3000, []int{1}).
 				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
@@ -407,23 +407,23 @@ func TestAddProfile(t *testing.T) {
 		{
 			buildProfile: newTestProfileBuilder().
 				AddSamples("a.go:test.f1.func1",
-					100, []int{1, 2, 3},
-					50, []int{2, 3},
-					25, []int{3},
-					500, []int{4}).
+					100000, []int{1, 2, 3},
+					50000, []int{2, 3},
+					25000, []int{3},
+					500000, []int{4}).
 				AddSamples("a.go:test.f1.func2",
-					150, []int{6},
-					200, []int{6},
-					80, []int{10},
-					40, []int{11}).
+					150000, []int{6},
+					200000, []int{6},
+					80000, []int{10},
+					40000, []int{11}).
 				AddSamples("b.go:test.f",
-					40, []int{5, 6},
-					40, []int{5, 6},
-					40, []int{5, 6},
-					40, []int{5, 6},
-					40, []int{7},
-					145, []int{7, 6, 5},
-					40, []int{5, 6}).
+					40000, []int{5, 6},
+					40000, []int{5, 6},
+					40000, []int{5, 6},
+					40000, []int{5, 6},
+					40000, []int{7},
+					145000, []int{7, 6, 5},
+					40000, []int{5, 6}).
 				Build,
 			config: IndexConfig{Threshold: 0.5},
 			want: []string{
@@ -445,15 +445,15 @@ func TestAddProfile(t *testing.T) {
 
 		{
 			buildProfile: newTestProfileBuilder().
-				AddSamples("a.go:test.f1", 109, []int{1}).
-				AddSamples("a.go:test.f2", 108, []int{2}).
-				AddSamples("a.go:test.f3", 107, []int{3}).
-				AddSamples("a.go:test.f4", 106, []int{4}).
-				AddSamples("a.go:test.f5", 105, []int{5}).
-				AddSamples("a.go:test.f6", 104, []int{6}).
-				AddSamples("a.go:test.f7", 103, []int{7}).
-				AddSamples("a.go:test.f8", 102, []int{8}).
-				AddSamples("a.go:test.f9", 101, []int{9}).
+				AddSamples("a.go:test.f1", 109000, []int{1}).
+				AddSamples("a.go:test.f2", 108000, []int{2}).
+				AddSamples("a.go:test.f3", 107000, []int{3}).
+				AddSamples("a.go:test.f4", 106000, []int{4}).
+				AddSamples("a.go:test.f5", 105000, []int{5}).
+				AddSamples("a.go:test.f6", 104000, []int{6}).
+				AddSamples("a.go:test.f7", 103000, []int{7}).
+				AddSamples("a.go:test.f8", 102000, []int{8}).
+				AddSamples("a.go:test.f9", 101000, []int{9}).
 				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
@@ -482,15 +482,15 @@ func TestAddProfile(t *testing.T) {
 		{
 			buildProfile: newTestProfileBuilder().
 				Sorted().
-				AddSamples("/foo/go/src/a.go:test.f", 109, []int{1}).
-				AddSamples("/foo/go/src/a.go:test.f", 108, []int{1}).
-				AddSamples("/foo/go/src/a.go:test.f", 106, []int{1}).
-				AddSamples("/foo/go/src/a.go:test.f", 107, []int{1}).
-				AddSamples("/foo/go/src/a.go:test.f", 104, []int{1}).
-				AddSamples("/foo/go/src/a.go:test.f", 101, []int{1}).
-				AddSamples("/foo/go/src/a.go:test.f", 105, []int{1}).
-				AddSamples("/foo/go/src/a.go:test.f", 102, []int{1}).
-				AddSamples("/foo/go/src/a.go:test.f", 103, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f", 109000, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f", 108000, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f", 106000, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f", 107000, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f", 104000, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f", 101000, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f", 105000, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f", 102000, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f", 103000, []int{1}).
 				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
@@ -502,15 +502,15 @@ func TestAddProfile(t *testing.T) {
 		{
 			buildProfile: newTestProfileBuilder().
 				Sorted().
-				AddSamples("/foo/go/src/a.go:test.f1", 109, []int{1}).
-				AddSamples("/foo/go/src/a.go:test.f2", 108, []int{1}).
-				AddSamples("/foo/go/src/a.go:test.f3", 106, []int{1}).
-				AddSamples("/foo/go/src/a.go:test.f4", 107, []int{1}).
-				AddSamples("/foo/go/src/a.go:test.f5", 104, []int{1}).
-				AddSamples("/foo/go/src/a.go:test.f6", 101, []int{1}).
-				AddSamples("/foo/go/src/a.go:test.f7", 105, []int{1}).
-				AddSamples("/foo/go/src/a.go:test.f8", 102, []int{1}).
-				AddSamples("/foo/go/src/a.go:test.f9", 103, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f1", 109000, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f2", 108000, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f3", 106000, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f4", 107000, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f5", 104000, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f6", 101000, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f7", 105000, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f8", 102000, []int{1}).
+				AddSamples("/foo/go/src/a.go:test.f9", 103000, []int{1}).
 				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
@@ -537,15 +537,15 @@ func TestAddProfile(t *testing.T) {
 
 		{
 			buildProfile: newTestProfileBuilder().
-				AddSamples("a.go:x.(Example).f1", 109, []int{5}).
-				AddSamples("a.go:x.(Example).f2", 108, []int{6}).
-				AddSamples("a.go:x.(Example).f3", 107, []int{7}).
-				AddSamples("a.go:x.(Example).f4", 106, []int{1}).
-				AddSamples("a.go:x.(Example).f5", 105, []int{2}).
-				AddSamples("a.go:x.(Example).f6", 104, []int{3}).
-				AddSamples("a.go:x.(Example).f7", 103, []int{4}).
-				AddSamples("a.go:x.(Example).f8", 102, []int{8}).
-				AddSamples("a.go:x.(Example).f9", 101, []int{9}).
+				AddSamples("a.go:x.(Example).f1", 109000, []int{5}).
+				AddSamples("a.go:x.(Example).f2", 108000, []int{6}).
+				AddSamples("a.go:x.(Example).f3", 107000, []int{7}).
+				AddSamples("a.go:x.(Example).f4", 106000, []int{1}).
+				AddSamples("a.go:x.(Example).f5", 105000, []int{2}).
+				AddSamples("a.go:x.(Example).f6", 104000, []int{3}).
+				AddSamples("a.go:x.(Example).f7", 103000, []int{4}).
+				AddSamples("a.go:x.(Example).f8", 102000, []int{8}).
+				AddSamples("a.go:x.(Example).f9", 101000, []int{9}).
 				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
@@ -573,104 +573,104 @@ func TestAddProfile(t *testing.T) {
 		{
 			buildProfile: newTestProfileBuilder().
 				AddSamples("file.go:example.testfunc",
-					100, []int{207},
-					100, []int{500, 305},
-					100, []int{207},
-					100, []int{200, 205, 201},
-					100, []int{205},
-					100, []int{100},
-					100, []int{100, 200},
-					10, []int{207},
-					10, []int{500, 305},
-					10, []int{207},
-					10, []int{200, 205, 201},
-					10, []int{205},
-					10, []int{100},
-					10, []int{100, 200},
-					92, []int{207},
-					92, []int{500, 305},
-					92, []int{207},
-					92, []int{200, 205, 201},
-					92, []int{205},
-					92, []int{100},
-					92, []int{100, 200},
-					49, []int{207},
-					49, []int{500, 305},
-					49, []int{207},
-					49, []int{200, 205, 201},
-					49, []int{205},
-					49, []int{100},
-					49, []int{100, 200},
-					24, []int{207},
-					24, []int{500, 305},
-					24, []int{207},
-					24, []int{200, 205, 201},
-					24, []int{205},
-					24, []int{100},
-					24, []int{100, 200},
-					30, []int{207},
-					30, []int{500, 305},
-					30, []int{207},
-					30, []int{200, 205, 201},
-					30, []int{205},
-					30, []int{100},
-					30, []int{100, 200},
-					15, []int{207},
-					15, []int{500, 305},
-					15, []int{207},
-					15, []int{200, 205, 201},
-					15, []int{205},
-					15, []int{100},
-					15, []int{100, 200},
-					15, []int{100, 200},
-					15, []int{100},
-					15, []int{205},
-					15, []int{200, 205, 201},
-					15, []int{207},
-					15, []int{500, 305},
-					15, []int{207},
-					30, []int{100, 200},
-					30, []int{100},
-					30, []int{205},
-					30, []int{200, 205, 201},
-					30, []int{207},
-					30, []int{500, 305},
-					30, []int{207},
-					24, []int{100, 200},
-					24, []int{100},
-					24, []int{205},
-					24, []int{200, 205, 201},
-					24, []int{207},
-					24, []int{500, 305},
-					24, []int{207},
-					49, []int{100, 200},
-					49, []int{100},
-					49, []int{205},
-					49, []int{200, 205, 201},
-					49, []int{207},
-					49, []int{500, 305},
-					49, []int{207},
-					92, []int{100, 200},
-					92, []int{100},
-					92, []int{205},
-					92, []int{200, 205, 201},
-					92, []int{207},
-					92, []int{500, 305},
-					92, []int{207},
-					10, []int{100, 200},
-					10, []int{100},
-					10, []int{205},
-					10, []int{200, 205, 201},
-					10, []int{207},
-					10, []int{500, 305},
-					10, []int{207},
-					100, []int{100, 200},
-					100, []int{100},
-					100, []int{205},
-					100, []int{200, 205, 201},
-					100, []int{207},
-					100, []int{500, 305},
-					100, []int{207}).
+					100000, []int{207},
+					100000, []int{500, 305},
+					100000, []int{207},
+					100000, []int{200, 205, 201},
+					100000, []int{205},
+					100000, []int{100},
+					100000, []int{100, 200},
+					10000, []int{207},
+					10000, []int{500, 305},
+					10000, []int{207},
+					10000, []int{200, 205, 201},
+					10000, []int{205},
+					10000, []int{100},
+					10000, []int{100, 200},
+					92000, []int{207},
+					92000, []int{500, 305},
+					92000, []int{207},
+					92000, []int{200, 205, 201},
+					92000, []int{205},
+					92000, []int{100},
+					92000, []int{100, 200},
+					49000, []int{207},
+					49000, []int{500, 305},
+					49000, []int{207},
+					49000, []int{200, 205, 201},
+					49000, []int{205},
+					49000, []int{100},
+					49000, []int{100, 200},
+					24000, []int{207},
+					24000, []int{500, 305},
+					24000, []int{207},
+					24000, []int{200, 205, 201},
+					24000, []int{205},
+					24000, []int{100},
+					24000, []int{100, 200},
+					30000, []int{207},
+					30000, []int{500, 305},
+					30000, []int{207},
+					30000, []int{200, 205, 201},
+					30000, []int{205},
+					30000, []int{100},
+					30000, []int{100, 200},
+					15000, []int{207},
+					15000, []int{500, 305},
+					15000, []int{207},
+					15000, []int{200, 205, 201},
+					15000, []int{205},
+					15000, []int{100},
+					15000, []int{100, 200},
+					15000, []int{100, 200},
+					15000, []int{100},
+					15000, []int{205},
+					15000, []int{200, 205, 201},
+					15000, []int{207},
+					15000, []int{500, 305},
+					15000, []int{207},
+					30000, []int{100, 200},
+					30000, []int{100},
+					30000, []int{205},
+					30000, []int{200, 205, 201},
+					30000, []int{207},
+					30000, []int{500, 305},
+					30000, []int{207},
+					24000, []int{100, 200},
+					24000, []int{100},
+					24000, []int{205},
+					24000, []int{200, 205, 201},
+					24000, []int{207},
+					24000, []int{500, 305},
+					24000, []int{207},
+					49000, []int{100, 200},
+					49000, []int{100},
+					49000, []int{205},
+					49000, []int{200, 205, 201},
+					49000, []int{207},
+					49000, []int{500, 305},
+					49000, []int{207},
+					92000, []int{100, 200},
+					92000, []int{100},
+					92000, []int{205},
+					92000, []int{200, 205, 201},
+					92000, []int{207},
+					92000, []int{500, 305},
+					92000, []int{207},
+					10000, []int{100, 200},
+					10000, []int{100},
+					10000, []int{205},
+					10000, []int{200, 205, 201},
+					10000, []int{207},
+					10000, []int{500, 305},
+					10000, []int{207},
+					100000, []int{100, 200},
+					100000, []int{100},
+					100000, []int{205},
+					100000, []int{200, 205, 201},
+					100000, []int{207},
+					100000, []int{500, 305},
+					100000, []int{207}).
 				Build,
 			config: IndexConfig{Threshold: 1},
 			want: []string{
@@ -722,7 +722,7 @@ func TestAddProfile(t *testing.T) {
 		},
 	}
 
-	ignoreFields := cmpopts.IgnoreFields(LineStats{}, "Value", "LineNum")
+	ignoreFields := cmpopts.IgnoreFields(LineStats{}, "Value", "FlatValue", "LineNum")
 	statsDiff := func(x, y interface{}) string {
 		return cmp.Diff(x, y, ignoreFields)
 	}

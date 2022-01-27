@@ -42,10 +42,10 @@ func (w *profileWalker) Walk() error {
 	}
 
 	pointGreater := func(x, y dataPoint) bool {
-		if x.value > y.value {
+		if x.cumValue > y.cumValue {
 			return true
 		}
-		if x.value < y.value {
+		if x.cumValue < y.cumValue {
 			return false
 		}
 		return x.line > y.line
@@ -62,46 +62,58 @@ func (w *profileWalker) Walk() error {
 	numDataPoints := uint64(0)
 	filenameSet := map[string]uint32{}
 	m := map[Key]*funcIndexTemplate{}
+	var stacktrace []profile.Line
 	for _, s := range w.p.Sample {
-		sampleValue := s.Value[1]
+		sampleValue := uint32(s.Value[1] / 1000)
+		if s.Value[1] < 1000 || sampleValue == 0 {
+			return fmt.Errorf("found a sample value that is too small (%d ns)", s.Value[1])
+		}
+		stacktrace = stacktrace[:0]
 		for _, loc := range s.Location {
-			for _, l := range loc.Line {
-				sym := pprofutil.ParseFuncName(l.Function.Name)
-				if sym.PkgName == "" {
-					continue
-				}
-				lineNum := l.Line
-				if lineNum > math.MaxUint32 {
-					continue
-				}
-				origFilename := l.Function.Filename
-				filenameSet[origFilename] = 0 // Will be set to an actual index later
-				key := Key{
-					TypeName: sym.TypeName,
-					FuncName: sym.FuncName,
-					PkgName:  sym.PkgName,
-					Filename: filepath.Base(origFilename),
-				}
-				fn := m[key]
-				if fn == nil {
-					fn = &funcIndexTemplate{
-						funcIndex: funcIndex{
-							minLine: math.MaxUint32,
-						},
-						key:          key,
-						origFilename: origFilename,
-						dataByLine:   map[int64]dataPoint{},
-					}
-					m[key] = fn
-				}
-				pt, ok := fn.dataByLine[lineNum]
-				if !ok {
-					numDataPoints++
-					pt.line = uint32(lineNum)
-				}
-				pt.value += sampleValue
-				fn.dataByLine[lineNum] = pt
+			stacktrace = append(stacktrace, loc.Line...)
+		}
+		for i, l := range stacktrace {
+			// The first record in the stacktrace is the current function,
+			// so we count this sample as self value (goes to a "flat" score).
+			isSelf := i == 0
+			sym := pprofutil.ParseFuncName(l.Function.Name)
+			if sym.PkgName == "" {
+				continue
 			}
+			lineNum := l.Line
+			if lineNum > math.MaxUint32 {
+				continue
+			}
+			origFilename := l.Function.Filename
+			filenameSet[origFilename] = 0 // Will be set to an actual index later
+			key := Key{
+				TypeName: sym.TypeName,
+				FuncName: sym.FuncName,
+				PkgName:  sym.PkgName,
+				Filename: filepath.Base(origFilename),
+			}
+			fn := m[key]
+			if fn == nil {
+				fn = &funcIndexTemplate{
+					funcIndex: funcIndex{
+						minLine: math.MaxUint32,
+					},
+					key:          key,
+					origFilename: origFilename,
+					dataByLine:   map[int64]dataPoint{},
+				}
+				m[key] = fn
+			}
+			pt, ok := fn.dataByLine[lineNum]
+			if !ok {
+				numDataPoints++
+				pt.line = uint32(lineNum)
+			}
+			pt.cumValue += durationValue(sampleValue)
+			if isSelf {
+				pt.flatValue += durationValue(sampleValue)
+			}
+			fn.dataByLine[lineNum] = pt
 		}
 	}
 

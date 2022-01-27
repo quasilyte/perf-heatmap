@@ -33,10 +33,8 @@ func (fn *funcIndex) NumPoints() int {
 // case we'll just skip samples that go beyond that.
 //
 // The saved 32 bits go into the extra metadata.
-// 16 bits are used to reference the associated function.
-// fileIndex.funcs[dataPoint.funcIndex] correspond to a function info.
-// If file contains more than 65535 functions with samples, oh well.
-// Other 16 bits are occupied by dataPointFlags.
+// The first 16 bits are occupied by dataPointFlags.
+// The Other 16 bits are unused for now.
 type dataPoint struct {
 	line  uint32
 	flags dataPointFlags
